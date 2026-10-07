@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BlogHub frontend
 
-## Getting Started
+Next.js App Router frontend for the existing BlogHub NestJS API. Includes the public journal, URL-backed discovery, safe Markdown articles, registration/login, author and admin workspaces, taxonomy management, and a rich text editor with browser recovery. Header and Footer are shared components. Follow `Rule.md` and the installed Next.js guides before extending it.
 
-First, run the development server:
+## Local startup
+
+Use Node.js 20.19+ or a compatible newer LTS release.
 
 ```bash
+npm ci
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. The default public API URL is `http://localhost:5300/api/v1`. Set `NEXT_PUBLIC_API_BASE_URL` in `.env.local` when needed, then restart Next.js. This value is compiled into browser code; never put a secret in it.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+In the sibling backend repository, configure its database and authentication environment and run `npm run start:dev`. Its current TypeORM configuration uses PostgreSQL port **5433**. The backend requires `JWT_SECRET` of at least 32 bytes. `FRONTEND_ORIGINS` defaults to `http://localhost:3000`; alternate frontend origins must be explicitly included. Swagger is at http://localhost:5300/api/docs. Use the same hostname for both apps, and compatible same-site origins for refresh cookies. Production cookies require HTTPS.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The backend uses schema synchronization. No backend startup, seeding, reset, admin creation, or schema change is performed by this frontend. Use an existing admin account for admin views; public registration creates authors.
 
-## Learn More
+## Checks
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If this execution environment blocks Turbopack's CSS worker from binding a port, use the supported alternative `npm run build -- --webpack`. Both bundlers use the same Tailwind PostCSS configuration. Start a completed build with `npm run start`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Browser tests use an isolated in-memory API on port 5301 and a **production** frontend on port 3001. They never touch the real backend or database. Build output is separate (`.next-test`), and test servers stop when the suite ends.
 
-## Deploy on Vercel
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+An installed Chrome binary can be used instead:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run test:e2e
+```
+
+## Behavior and limits
+
+- Access tokens stay in memory. Cookie operations include credentials; authenticated requests use Bearer headers. Refreshes share one promise per tab and use Web Locks across tabs where available. BroadcastChannel synchronizes account changes across tabs.
+- New posts require a category. Existing Uncategorized posts can be saved without assignment. Category changes clear selected tags, and at most 10 tags can be selected.
+- Save draft, Publish, Save changes, Unpublish, and confirmed permanent deletion use the existing API. Failed mutations keep writing and are never retried after a network error.
+- Visual, Markdown source, and Preview share the same content. The original source remains untouched until an actual edit. Tables, raw HTML, task lists, reference links, footnotes, and other detected advanced formatting stay in source mode. Raw HTML is omitted from the article and preview renderer. URL images load directly in the browser; uploads are outside scope.
+- Browser recovery is local to an account and post, updated after one second and before saving or closing the page. Restore/Discard offers a recovery decision; successful saving and explicit logout clear copies. Recovery is not a server autosave and can be unavailable when browser storage is blocked. Write on a trusted browser and save explicitly.
+- Unsaved changes warn on in-app links, sign-out, reload/close, and history navigation in browsers supporting the Navigation API. Older browsers still offer recovery and close/reload warnings.
+- Authors can rename only taxonomy they created. Admins can moderate any post and delete taxonomy; deleting a category removes its tags and preserves affected stories as Uncategorized.
+- No uploads, comments, likes, password reset, profile editing, user administration, or deployment is included.
+
+## Live integration review
+
+The real backend was offline during implementation. After starting it, use disposable accounts/content to check registration, login/reload/refresh/logout, taxonomy creation, draft saving/recovery, publication/unpublication, stable slugs, and ownership. With an existing admin, verify moderation and category deletion consequences. Clean up only the disposable content you created.
+
+The dependency audit reports five high advisories in the existing Next.js ESLint toolchain (`braces` and its parent packages). These are development dependencies; no automatic force downgrade was applied. Recheck upstream fixes before a release.
