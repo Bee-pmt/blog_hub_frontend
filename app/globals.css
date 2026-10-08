@@ -757,11 +757,11 @@ label .form-control {
   margin-top: 1rem;
 }
 .article-cover {
+  display: block;
   width: 100%;
-  max-height: 500px;
-  object-fit: cover;
+  height: 500px;
+  object-fit: contain;
   margin: 0 0 2.5rem;
-  min-height: 120px;
 }
 .prose {
   font-family: var(--font-editorial);
@@ -1321,6 +1321,6 @@ label .form-control {
     font-size: 2.7rem;
   }
   .article-cover {
-    max-height: 300px;
+    height: 300px;
   }
 }
