@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Category, Tag, errorMessage } from "@/lib/api";
 import { useAuth } from "./auth-provider";
@@ -12,16 +12,31 @@ export default function TaxonomyManager() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [editing, setEditing] = useState<{
+    item: Category;
+    kind: "categories" | "tags";
+  } | null>(null);
+  const [editError, setEditError] = useState("");
+  const editDialog = useRef<HTMLDialogElement>(null);
   const [deleting, setDeleting] = useState<{
     item: Category;
     kind: "categories" | "tags";
   } | null>(null);
-  const visibleCategories = categories.filter(
-    (item) => user?.role === "admin" || item.createdById === user?.id,
-  );
   const visibleTags = tags.filter(
     (item) => user?.role === "admin" || item.createdById === user?.id,
   );
+  const visibleCategories = categories.filter(
+    (item) => user?.role === "admin" || item.createdById === user?.id ||
+      visibleTags.some((tag) => tag.categoryId === item.id),
+  );
+  useEffect(() => {
+    if (!editing) return;
+    const dialog = editDialog.current;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLInputElement>("input")?.select();
+    return () => dialog?.close();
+  }, [editing]);
   useEffect(() => {
     // Loading state belongs to this remote request, including filter changes and retries.
     let active = true;
@@ -55,12 +70,14 @@ export default function TaxonomyManager() {
     const values = new FormData(form);
     const name = String(values.get("name") || "").trim();
     if (!name || !/[\p{L}\p{N}]/u.test(name)) {
-      setError("Use a name containing at least one letter or number.");
+      if (id) setEditError("Use a name containing at least one letter or number.");
+      else setError("Use a name containing at least one letter or number.");
       toast.error("Use a name containing at least one letter or number.");
       return;
     }
     setBusy(true);
     setError("");
+    setEditError("");
     try {
       await api(`/${kind}${id ? `/${id}` : ""}`, {
         method: id ? "PATCH" : "POST",
@@ -72,6 +89,7 @@ export default function TaxonomyManager() {
         }),
       });
       if (!id) form.reset();
+      else setEditing(null);
       toast.success(
         id
           ? "Name updated. Discovery links now use the new slug."
@@ -79,7 +97,8 @@ export default function TaxonomyManager() {
       );
       setRevision((value) => value + 1);
     } catch (failure) {
-      setError(errorMessage(failure));
+      if (id) setEditError(errorMessage(failure));
+      else setError(errorMessage(failure));
       toast.error(errorMessage(failure));
     } finally {
       setBusy(false);
@@ -87,43 +106,79 @@ export default function TaxonomyManager() {
   }
   function entry(item: Category, kind: "categories" | "tags") {
     const editable = user?.role === "admin" || item.createdById === user?.id;
+    const categoryTags = kind === "categories"
+      ? visibleTags.filter((tag) => tag.categoryId === item.id) : [];
+    const expanded = expandedCategories.includes(item.id);
     return (
       <li key={item.id} className="taxonomy-row">
         <div>
-          <strong>{item.name}</strong>
+          {kind === "categories" ? (
+            <button
+              className="taxonomy-toggle"
+              type="button"
+              aria-label={`Tags for ${item.name}`}
+              aria-expanded={expanded}
+              aria-controls={`category-tags-${item.id}`}
+              onClick={() => setExpandedCategories((current) =>
+                current.includes(item.id)
+                  ? current.filter((id) => id !== item.id)
+                  : [...current, item.id],
+              )}
+            >
+              <span className="taxonomy-chevron" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+              <strong>{item.name}</strong>
+              <span className="muted">({categoryTags.length} {categoryTags.length === 1 ? "tag" : "tags"})</span>
+            </button>
+          ) : <strong>{item.name}</strong>}
           <p className="field-help">
             /{item.slug}
+            {kind === "categories" && !editable && " · Contains your tags"}
             {kind === "tags" &&
               ` · ${categories.find((category) => category.id === (item as Tag).categoryId)?.name || "Category unavailable"}`}
           </p>
         </div>
         {editable && (
-          <form
-            className="rename-form"
-            onSubmit={(event) => void save(event, kind, item.id)}
-          >
-            <input
-              className="form-control"
-              aria-label={`Rename ${item.name}`}
-              name="name"
-              required
-              maxLength={100}
-              defaultValue={item.name}
-              key={item.name}
-            />
-            <button className="button button-secondary" disabled={busy}>
-              Rename
+            <button
+              className="button button-secondary taxonomy-icon-button"
+              type="button"
+              aria-label={`Edit ${item.name}`}
+              title={`Edit ${item.name}`}
+              disabled={busy}
+              onClick={() => {
+                setEditError("");
+                setEditing({ item, kind });
+              }}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m16 3 5 5-12 12-6 1 1-6L16 3Z" />
+                <path d="m13 6 5 5" />
+              </svg>
             </button>
-          </form>
         )}
         {user?.role === "admin" && (
           <button
-            className="text-link"
+            className="button button-secondary taxonomy-icon-button"
+            type="button"
+            aria-label="Delete"
+            title={`Delete ${item.name}`}
             disabled={busy}
             onClick={() => setDeleting({ item, kind })}
           >
-            Delete
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+            </svg>
           </button>
+        )}
+        {kind === "categories" && (
+          <div id={`category-tags-${item.id}`} className="taxonomy-tags" hidden={!expanded}>
+            {categoryTags.length ? (
+              <ul>{categoryTags.map((tag) => entry(tag, "tags"))}</ul>
+            ) : (
+              <p className="muted">
+                {user?.role === "admin" ? "No tags in this category yet." : "You haven’t created any tags in this category yet."}
+              </p>
+            )}
+          </div>
         )}
       </li>
     );
@@ -139,8 +194,8 @@ export default function TaxonomyManager() {
       <p className="muted">
         Create topics for your stories.{" "}
         {user?.role === "admin"
-          ? "You can manage all entries."
-          : "The lists below show only categories and tags you created. You can rename your entries and create tags under any category."}
+          ? "Click a category to view its tags. You can manage all entries."
+          : "Click a category to view your tags. Categories you created or added tags to appear below. You can rename your own entries and create tags under any category."}
       </p>
       {error && (
         <p className="notice" role="alert">
@@ -231,17 +286,42 @@ export default function TaxonomyManager() {
               <p className="muted">Create your first category above.</p>
             )}
           </section>
-          <section className="taxonomy-section">
-            <h2>
-              Tags <span className="muted">({visibleTags.length})</span>
-            </h2>
-            {visibleTags.length ? (
-              <ul>{visibleTags.map((item) => entry(item, "tags"))}</ul>
-            ) : (
-              <p className="muted">No tags yet. Tags belong to a category.</p>
-            )}
-          </section>
         </>
+      )}
+      {editing && (
+        <dialog
+          ref={editDialog}
+          className="confirm-dialog"
+          aria-labelledby="edit-taxonomy-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            if (!busy) setEditing(null);
+          }}
+        >
+          <form className="stack" onSubmit={(event) => void save(event, editing.kind, editing.item.id)}>
+            <h2 id="edit-taxonomy-title">Edit {editing.kind === "categories" ? "category" : "tag"}</h2>
+            <label>
+              Name
+              <input
+                className="form-control"
+                name="name"
+                required
+                maxLength={100}
+                defaultValue={editing.item.name}
+                disabled={busy}
+              />
+            </label>
+            {editError && <p className="notice" role="alert">{editError}</p>}
+            <div className="actions">
+              <button type="button" className="button button-secondary" disabled={busy} onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="button button-primary" disabled={busy}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+        </dialog>
       )}
       {deleting && (
         <ConfirmDialog

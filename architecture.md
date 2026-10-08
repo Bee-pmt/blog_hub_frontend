@@ -80,7 +80,7 @@ The current project uses root-level `app/`, `components/`, `lib/`, and the singu
 
 The UI calls the dashboard “Profile” or “My workspace,” while its URL remains `/dashboard`. Dashboard pages are marked to prevent search indexing.
 
-On category and tag management, authors' lists show only entries whose `createdById` matches their user ID. Admins see all entries. The New tag category selector shows all categories for both roles, so an author can create a tag under another user's category even without owning any categories. The new tag belongs to its creator. Public discovery and the story editor also use all available categories and tags.
+Category management groups tags under expandable category rows. Authors see categories they created, plus categories containing their own tags; expanding a category shows only that author's tags. A category created by someone else provides grouping context and cannot be renamed by the author. Admins see and manage all categories and tags. The New tag category selector shows all categories for both roles, so an author can create a tag under another user's category even without owning any categories. The new tag belongs to its creator. Public discovery and the story editor also use all available categories and tags.
 
 `DashboardShell` resolves the browser session before showing protected content. Signed-out users are redirected to login with a return path. Admin pages also check the displayed user's role. The backend must enforce authorization on every protected endpoint; a client-side guard is only a UI convenience.
 
@@ -186,6 +186,8 @@ Articles and previews use the shared Markdown renderer. Raw HTML is skipped, lin
 Pending states prevent duplicate submissions. Forms and pages show readable API errors, protected screens offer session retries, and destructive operations require confirmation.
 
 A shared Sonner `Toaster` is mounted in the root layout, outside route content, so notifications survive in-app redirects. Authentication, story mutations, image validation, and taxonomy actions call `toast.success` or `toast.error` from their client handlers. Toast colors inherit the site's theme variables. Form errors and persistent recovery/loading notices remain inline; background loading does not generate repeated toasts.
+
+Category and tag pencil buttons open a native modal dialog with the current name and Save/Cancel controls. The dialog traps focus, supports Escape when idle, and keeps entered text and validation errors visible after a failed save. Successful renaming closes the dialog and reloads the entries. Delete buttons continue to use a separate confirmation dialog.
 
 ## Runtime and deployment requirements
 

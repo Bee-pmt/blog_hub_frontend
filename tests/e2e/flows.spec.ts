@@ -159,29 +159,50 @@ test("author taxonomy permissions and blocked admin route", async ({
   await login(page);
   await page.goto("/dashboard/taxonomy");
   await expect(
-    page.getByRole("textbox", { name: "Rename Ideas", exact: true }),
+    page.getByRole("button", { name: "Edit Ideas", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Rename Life", exact: true }),
+    page.getByRole("button", { name: "Edit Life", exact: true }),
   ).toHaveCount(0);
   await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
   await expect(page.locator(".taxonomy-row").filter({ hasText: "/perspective" })).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "Rename Thinking", exact: true })).toBeVisible();
+  const ideasToggle = page.getByRole("button", { name: "Tags for Ideas", exact: true });
+  await expect(ideasToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Edit Thinking", exact: true })).toBeHidden();
+  await ideasToggle.click();
+  await expect(ideasToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "Edit Thinking", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Perspective", exact: true })).toHaveCount(0);
+  await ideasToggle.press("Enter");
+  await expect(ideasToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Edit Thinking", exact: true })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tags (1)", exact: true })).toBeVisible();
   const categorySelect = page.getByRole("combobox", { name: "Category", exact: true });
   await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Ideas", "Life"]);
   await expect(
     page.getByRole("button", { name: "Delete", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("textbox", { name: "Rename Ideas", exact: true })
-    .fill("Fresh Ideas");
-  await page
-    .locator(".taxonomy-row")
-    .filter({ hasText: "/ideas" })
-    .getByRole("button", { name: "Rename", exact: true })
-    .click();
+  await expect(page.locator(".taxonomy-row input")).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
+  const editDialog = page.getByRole("dialog", { name: "Edit category", exact: true });
+  await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Ideas");
+  await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toBeFocused();
+  await editDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Cancelled edit");
+  await editDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editDialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
+  await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Ideas");
+  await editDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Life");
+  await page.route(`${api}/categories/cat-1`, (route) => route.fulfill({
+    status: 409,
+    json: { message: "Name already exists" },
+  }), { times: 1 });
+  await editDialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(editDialog.getByRole("alert")).toHaveText("Name already exists");
+  await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Life");
+  await editDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Fresh Ideas");
+  await editDialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(editDialog).toHaveCount(0);
   await expect(page.getByText("/fresh-ideas", { exact: true })).toBeVisible();
   await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Fresh Ideas", "Life"]);
   await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
@@ -190,12 +211,22 @@ test("author taxonomy permissions and blocked admin route", async ({
   await categorySelect.selectOption("cat-2");
   await tagForm.getByRole("textbox", { name: "Name", exact: true }).fill("Daily moments");
   await tagForm.getByRole("button", { name: "Create tag", exact: true }).click();
-  const newTag = page.locator(".taxonomy-row").filter({ hasText: "/daily-moments" });
+  await page.getByRole("button", { name: "Tags for Life", exact: true }).click();
+  const newTag = page.locator(".taxonomy-tags .taxonomy-row").filter({ hasText: "/daily-moments" });
   await expect(newTag).toContainText("Life");
-  await expect(newTag.getByRole("textbox", { name: "Rename Daily moments", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tags (2)", exact: true })).toBeVisible();
-  await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
+  await expect(newTag.getByRole("button", { name: "Edit Daily moments", exact: true })).toBeVisible();
+  await newTag.getByRole("button", { name: "Edit Daily moments", exact: true }).click();
+  const tagDialog = page.getByRole("dialog", { name: "Edit tag", exact: true });
+  await expect(tagDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Daily moments");
+  await tagDialog.getByRole("textbox", { name: "Name", exact: true }).press("Escape");
+  await expect(tagDialog).toHaveCount(0);
+  await newTag.getByRole("button", { name: "Edit Daily moments", exact: true }).click();
+  await tagDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Everyday moments");
+  await tagDialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(tagDialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit Everyday moments", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (2)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toHaveCount(0);
   await page.goto("/dashboard/admin/posts");
   await expect(
     page.getByRole("heading", { name: "This workspace is for admins." }),
@@ -209,17 +240,18 @@ test("author without categories can create a tag under an existing category", as
   await login(page, "new-author@test.local");
   await page.goto("/dashboard/taxonomy");
   await expect(page.getByRole("heading", { name: "Categories (0)", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tags (0)", exact: true })).toBeVisible();
   const tagForm = page.locator("form").filter({ has: page.getByRole("heading", { name: "New tag", exact: true }) });
   await expect(tagForm.getByRole("button", { name: "Create tag", exact: true })).toBeEnabled();
   await tagForm.getByRole("combobox", { name: "Category", exact: true }).selectOption("cat-1");
   await tagForm.getByRole("textbox", { name: "Name", exact: true }).fill("New perspective");
   await tagForm.getByRole("button", { name: "Create tag", exact: true }).click();
-  const newTag = page.locator(".taxonomy-row").filter({ hasText: "/new-perspective" });
+  await page.getByRole("button", { name: "Tags for Ideas", exact: true }).click();
+  const newTag = page.locator(".taxonomy-tags .taxonomy-row").filter({ hasText: "/new-perspective" });
   await expect(newTag).toContainText("Ideas");
-  await expect(newTag.getByRole("textbox", { name: "Rename New perspective", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Categories (0)", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tags (1)", exact: true })).toBeVisible();
+  await expect(newTag.getByRole("button", { name: "Edit New perspective", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit Thinking", exact: true })).toHaveCount(0);
 });
 test("admin moderates another author and deletes a category without deleting stories", async ({
   page,
@@ -232,11 +264,16 @@ test("admin moderates another author and deletes a category without deleting sto
   await page.getByRole("button", { name: "Unpublish", exact: true }).click();
   await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
   await page.goto("/dashboard/taxonomy");
-  await expect(page.getByRole("textbox", { name: "Rename Life", exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Rename Thinking", exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Rename Perspective", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
+  const adminIdeasToggle = page.getByRole("button", { name: "Tags for Ideas", exact: true });
+  await adminIdeasToggle.click();
+  await expect(page.getByRole("button", { name: "Edit Thinking", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Perspective", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Categories (2)", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tags (2)", exact: true })).toBeVisible();
+  await adminIdeasToggle.click();
+  await page.getByRole("button", { name: "Tags for Life", exact: true }).click();
+  await expect(page.getByText("No tags in this category yet.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Tags for Life", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Category", exact: true }).locator("option"))
     .toHaveText(["Select a category", "Ideas", "Life"]);
   await page
