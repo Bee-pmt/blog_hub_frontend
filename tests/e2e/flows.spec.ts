@@ -170,7 +170,7 @@ test("author taxonomy permissions and blocked admin route", async ({
   await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tags (1)", exact: true })).toBeVisible();
   const categorySelect = page.getByRole("combobox", { name: "Category", exact: true });
-  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Ideas"]);
+  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Ideas", "Life"]);
   await expect(
     page.getByRole("button", { name: "Delete", exact: true }),
   ).toHaveCount(0);
@@ -183,13 +183,43 @@ test("author taxonomy permissions and blocked admin route", async ({
     .getByRole("button", { name: "Rename", exact: true })
     .click();
   await expect(page.getByText("/fresh-ideas", { exact: true })).toBeVisible();
-  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Fresh Ideas"]);
+  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Fresh Ideas", "Life"]);
   await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
   await expect(page.locator(".taxonomy-row").filter({ hasText: "/perspective" })).toHaveCount(0);
+  const tagForm = page.locator("form").filter({ has: page.getByRole("heading", { name: "New tag", exact: true }) });
+  await categorySelect.selectOption("cat-2");
+  await tagForm.getByRole("textbox", { name: "Name", exact: true }).fill("Daily moments");
+  await tagForm.getByRole("button", { name: "Create tag", exact: true }).click();
+  const newTag = page.locator(".taxonomy-row").filter({ hasText: "/daily-moments" });
+  await expect(newTag).toContainText("Life");
+  await expect(newTag.getByRole("textbox", { name: "Rename Daily moments", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags (2)", exact: true })).toBeVisible();
+  await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
   await page.goto("/dashboard/admin/posts");
   await expect(
     page.getByRole("heading", { name: "This workspace is for admins." }),
   ).toBeVisible();
+});
+test("author without categories can create a tag under an existing category", async ({ page, request }) => {
+  const registration = await request.post(`${api}/auth/register`, {
+    data: { displayName: "New Author", email: "new-author@test.local", password: "password123" },
+  });
+  expect(registration.ok()).toBe(true);
+  await login(page, "new-author@test.local");
+  await page.goto("/dashboard/taxonomy");
+  await expect(page.getByRole("heading", { name: "Categories (0)", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags (0)", exact: true })).toBeVisible();
+  const tagForm = page.locator("form").filter({ has: page.getByRole("heading", { name: "New tag", exact: true }) });
+  await expect(tagForm.getByRole("button", { name: "Create tag", exact: true })).toBeEnabled();
+  await tagForm.getByRole("combobox", { name: "Category", exact: true }).selectOption("cat-1");
+  await tagForm.getByRole("textbox", { name: "Name", exact: true }).fill("New perspective");
+  await tagForm.getByRole("button", { name: "Create tag", exact: true }).click();
+  const newTag = page.locator(".taxonomy-row").filter({ hasText: "/new-perspective" });
+  await expect(newTag).toContainText("Ideas");
+  await expect(newTag.getByRole("textbox", { name: "Rename New perspective", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (0)", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags (1)", exact: true })).toBeVisible();
 });
 test("admin moderates another author and deletes a category without deleting stories", async ({
   page,

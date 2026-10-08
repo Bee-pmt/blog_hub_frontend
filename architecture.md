@@ -80,7 +80,7 @@ The current project uses root-level `app/`, `components/`, `lib/`, and the singu
 
 The UI calls the dashboard “Profile” or “My workspace,” while its URL remains `/dashboard`. Dashboard pages are marked to prevent search indexing.
 
-On category and tag management, authors see only entries whose `createdById` matches their user ID, including the category choices for creating a tag. Admins see all entries. Public discovery and the story editor continue using all available categories and tags.
+On category and tag management, authors' lists show only entries whose `createdById` matches their user ID. Admins see all entries. The New tag category selector shows all categories for both roles, so an author can create a tag under another user's category even without owning any categories. The new tag belongs to its creator. Public discovery and the story editor also use all available categories and tags.
 
 `DashboardShell` resolves the browser session before showing protected content. Signed-out users are redirected to login with a return path. Admin pages also check the displayed user's role. The backend must enforce authorization on every protected endpoint; a client-side guard is only a UI convenience.
 

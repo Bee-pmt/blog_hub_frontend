@@ -140,7 +140,7 @@ export default function TaxonomyManager() {
         Create topics for your stories.{" "}
         {user?.role === "admin"
           ? "You can manage all entries."
-          : "Only categories and tags you created are shown here. You can rename your entries."}
+          : "The lists below show only categories and tags you created. You can rename your entries and create tags under any category."}
       </p>
       {error && (
         <p className="notice" role="alert">
@@ -191,7 +191,7 @@ export default function TaxonomyManager() {
               <option value="" disabled>
                 Select a category
               </option>
-              {visibleCategories.map((item) => (
+              {categories.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.name}
                 </option>
@@ -209,7 +209,7 @@ export default function TaxonomyManager() {
           </label>
           <button
             className="button button-primary"
-            disabled={busy || loading || !visibleCategories.length}
+            disabled={busy || loading || !categories.length}
           >
             Create tag
           </button>
