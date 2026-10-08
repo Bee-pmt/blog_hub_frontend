@@ -1,14 +1,17 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-provider";
+import { errorMessage } from "@/lib/api";
 export default function DashboardShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, error, restore } = useAuth();
+  const { user, loading, error, restore, logout } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const pathname = usePathname();
   const router = useRouter();
   const admin = pathname.startsWith("/dashboard/admin");
@@ -103,6 +106,27 @@ export default function DashboardShell({
         <div className="account-details">
           <p>{user.email}</p>
           <p>{user.role === "admin" ? "Administrator" : "Author"}</p>
+        </div>
+        <div className="workspace-signout">
+          <button
+            className="button button-secondary"
+            data-leave-editor
+            disabled={signingOut}
+            onClick={async () => {
+              setSigningOut(true);
+              setLogoutError("");
+              try {
+                await logout();
+              } catch (failure) {
+                setLogoutError(errorMessage(failure));
+              } finally {
+                setSigningOut(false);
+              }
+            }}
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+          {logoutError && <p className="notice" role="alert">{logoutError}</p>}
         </div>
       </aside>
       <div className="dashboard-content">{children}</div>

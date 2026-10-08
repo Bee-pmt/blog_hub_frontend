@@ -2,7 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { errorMessage, localReturnPath, request } from "@/lib/api";
+import { errorMessage, localReturnPath } from "@/lib/api";
+import { submitAuthAction } from "@/action/action";
 import { useAuth } from "./auth-provider";
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const { login, user, loading, error: sessionError, restore } = useAuth();
@@ -11,6 +12,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [busy, setBusy] = useState(false);
   const [registered, setRegistered] = useState(false);
   const register = mode === "register";
+  
   return (
     <main id="main-content" className="site-container account-page">
       <div className="account-intro">
@@ -35,7 +37,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <>
             <h2>Signed in as {user.displayName}</h2>
             <Link className="button button-primary" href="/dashboard">
-              Go to dashboard
+              Go to profile
             </Link>
           </>
         ) : (
@@ -51,33 +53,20 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             )}
             <form
               className="stack"
-              onSubmit={async (event) => {
-                event.preventDefault();
+              action={async (form) => {
                 if (busy) return;
                 setError("");
-                const form = new FormData(event.currentTarget);
-                const email = String(form.get("email")).trim().toLowerCase();
-                const password = String(form.get("password"));
-                if (new TextEncoder().encode(password).length > 72) {
-                  setError(
-                    "Password must be no more than 72 UTF-8 bytes. Use fewer characters.",
-                  );
-                  return;
-                }
                 setBusy(true);
                 try {
                   if (register) {
-                    await request("/auth/register", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        displayName: String(form.get("displayName")).trim(),
-                        email,
-                        password,
-                      }),
-                    });
+                    const result = await submitAuthAction("register", form);
+                    if (result.error) {
+                      setError(result.error);
+                      return;
+                    }
                     setRegistered(true);
                   } else {
-                    await login(email, password);
+                    await login(form);
                     router.replace(
                       localReturnPath(
                         new URLSearchParams(window.location.search).get(
@@ -139,7 +128,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                 </p>
               )}
               <button
-                disabled={busy || loading}
+                disabled={busy}
                 className="button button-primary"
                 type="submit"
               >

@@ -1,4 +1,5 @@
 import { ApiError, request, TokenResponse } from "./api";
+import { refreshSessionAction } from "@/action/action";
 let accessToken = "";
 let expiresAt = 0;
 let refreshPromise: Promise<string> | null = null;
@@ -21,10 +22,9 @@ export function refreshSession() {
   if (refreshPromise) return refreshPromise;
   const currentGeneration = generation;
   refreshPromise = sessionLock(async () => {
-    const data = await request<TokenResponse>("/auth/refresh", {
-      method: "POST",
-      credentials: "include",
-    });
+    const result = await refreshSessionAction();
+    if (!result.data) throw new ApiError(result.error, result.status);
+    const data = result.data;
     if (generation !== currentGeneration)
       throw new ApiError("Your session changed. Please sign in again.", 401);
     setSession(data);

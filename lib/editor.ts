@@ -1,4 +1,4 @@
-import { BlogInput, httpUrl } from "./api";
+import { BlogInput, blogImageUrl } from "./api";
 
 // These constructs are readable in Preview but intentionally kept in source mode.
 export function needsSourceMode(markdown: string) {
@@ -18,7 +18,7 @@ export function validatePost(input: BlogInput, isNew: boolean) {
   if (input.tagIds.length > 10) return "Select no more than 10 tags.";
   if (
     input.coverImageUrl &&
-    (!httpUrl(input.coverImageUrl) || input.coverImageUrl.length > 2048)
+    (!blogImageUrl(input.coverImageUrl) || input.coverImageUrl.length > 2048)
   )
     return "Use a valid HTTP or HTTPS cover URL of up to 2,048 characters.";
   return "";

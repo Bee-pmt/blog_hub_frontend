@@ -1,7 +1,7 @@
 // Isolated contract fixture. It never connects to the real backend or database.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-let categories, tags, blogs, users, sessions, access, failSave;
+let categories, tags, blogs, users, sessions, access, failSave, images;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
   users = [
@@ -96,6 +96,7 @@ function reset() {
   sessions = new Map();
   access = new Map();
   failSave = false;
+  images = new Map();
 }
 reset();
 function serialize(blog, detail) {
@@ -131,9 +132,28 @@ createServer(async (req, res) => {
   }
   const url = new URL(req.url, "http://localhost:5301");
   const path = url.pathname.replace("/api/v1", "");
-  let body = "";
-  for await (const chunk of req) body += chunk;
-  const data = body ? JSON.parse(body) : {};
+  if (req.method === "GET" && images.has(path)) {
+    const image = images.get(path);
+    res.writeHead(200, { "Content-Type": image.type });
+    return res.end(image.buffer);
+  }
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = Buffer.concat(chunks);
+  let data = {}, image;
+  if (req.headers["content-type"]?.startsWith("multipart/form-data")) {
+    const form = await new Request(url, {
+      method: req.method,
+      headers: { "Content-Type": req.headers["content-type"] },
+      body,
+    }).formData();
+    image = form.get("image");
+    for (const [key, value] of form) {
+      if (key !== "image") {
+        data[key] = key === "tagIds" ? JSON.parse(value) : key === "coverImageUrl" && value === "null" ? null : value;
+      }
+    }
+  } else if (body.length) data = JSON.parse(body.toString());
   const send = (value, status = 200) => {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(status === 204 ? undefined : JSON.stringify(value));
@@ -200,6 +220,14 @@ createServer(async (req, res) => {
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  if (image) {
+    if (data.coverImageUrl !== undefined) return send({ message: "Send either image or coverImageUrl, not both" }, 400);
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.type)) return send({ message: "Image must be JPEG, PNG, or WebP" }, 400);
+    if (image.size > 5 * 1024 * 1024) return send({ message: "Image must be at most 5 MB" }, 413);
+    const extension = image.type === "image/jpeg" ? "jpg" : image.type.split("/")[1];
+    data.coverImageUrl = `/images/${randomUUID()}.${extension}`;
+    images.set(data.coverImageUrl, { type: image.type, buffer: Buffer.from(await image.arrayBuffer()) });
+  }
   const kind = /^\/(categories|tags)/.exec(path)?.[1];
   if (kind) {
     const items = kind === "categories" ? categories : tags;
@@ -309,6 +337,7 @@ createServer(async (req, res) => {
       return send({ message: "Temporary save failure" }, 503);
     }
     const blog = {
+      coverImageUrl: null,
       ...data,
       id: randomUUID(),
       slug: data.title.toLowerCase().replaceAll(" ", "-"),

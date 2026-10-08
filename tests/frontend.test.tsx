@@ -5,14 +5,40 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Markdown as MarkdownExtension } from "@tiptap/markdown";
 import Markdown, { safeMarkdownUrl } from "@/components/markdown";
-import { ApiError, localReturnPath, queryString, request } from "@/lib/api";
+import { ApiError, blogImageUrl, localReturnPath, queryString, request } from "@/lib/api";
 import { needsSourceMode, validatePost } from "@/lib/editor";
+
+const cookieStore = vi.hoisted(() => ({
+  get: vi.fn(() => ({ value: "refresh-cookie" })),
+  set: vi.fn(),
+  delete: vi.fn(),
+}));
+vi.mock("next/headers", () => ({
+  cookies: async () => cookieStore,
+  headers: async () => new Headers({ Origin: "http://localhost:3000" }),
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
+  vi.clearAllMocks();
 });
 describe("API contract", () => {
+  it("leaves multipart Content-Type to the browser", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetcher);
+    const form = new FormData();
+    form.set("title", "A story");
+    await request("/blogs", { method: "POST", body: form });
+    expect(new Headers(fetcher.mock.calls[0][1].headers).has("Content-Type")).toBe(false);
+    expect(fetcher.mock.calls[0][1].body).toBe(form);
+  });
+  it("resolves uploaded image paths against the backend origin", () => {
+    const path = "/images/12345678-1234-1234-1234-123456789abc.png";
+    expect(blogImageUrl(path)).toBe(`http://localhost:5300${path}`);
+    for (const path of ["//evil.test/image.png", "/images/../secret.png", "/images/image.svg", "blob:untrusted"])
+      expect(blogImageUrl(path)).toBe("");
+  });
   it("encodes combined filters and omits blank parameters", () => {
     const query = new URLSearchParams(
       queryString({
@@ -75,13 +101,64 @@ describe("API contract", () => {
     );
   });
 });
+describe("authentication Server Actions", () => {
+  it("validates registration on the server before calling the backend", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { submitAuthAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", "writer@test.local");
+    form.set("password", "🙂".repeat(19));
+    form.set("displayName", "Writer");
+    const result = await submitAuthAction("register", form);
+    expect(result.status).toBe(400);
+    expect(result.error).toContain("72 UTF-8 bytes");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("sets a frontend HttpOnly cookie and preserves backend expiry", async () => {
+    const expires = "Wed, 14 Oct 2026 12:00:00 GMT";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+      { accessToken: "access", expiresIn: 3600 },
+      { headers: { "Set-Cookie": `bloghub_refresh=refresh; Path=/api/v1/auth; HttpOnly; Expires=${expires}` } },
+    )));
+    const { submitAuthAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", " WRITER@Test.local ");
+    form.set("password", "password123");
+    const result = await submitAuthAction("login", form);
+    expect(result.data?.accessToken).toBe("access");
+    expect(cookieStore.set).toHaveBeenCalledWith("bloghub_refresh", "refresh", expect.objectContaining({
+      httpOnly: true, sameSite: "lax", path: "/", expires: new Date(expires),
+    }));
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).email).toBe("writer@test.local");
+  });
+  it("returns backend errors without clearing the cookie after a failed login", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ message: "Invalid credentials" }, { status: 401 })));
+    const { submitAuthAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", "writer@test.local");
+    form.set("password", "incorrect");
+    expect(await submitAuthAction("login", form)).toMatchObject({ error: "Invalid credentials", status: 401, data: null });
+    expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+  it("forwards the refresh cookie and Origin, and clears an expired session", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "Expired" }, { status: 401 }));
+    vi.stubGlobal("fetch", fetcher);
+    const { refreshSessionAction } = await import("@/action/action");
+    expect(await refreshSessionAction()).toMatchObject({ status: 401, data: null });
+    const sentHeaders = new Headers(fetcher.mock.calls[0][1].headers);
+    expect(sentHeaders.get("Cookie")).toBe("bloghub_refresh=refresh-cookie");
+    expect(sentHeaders.get("Origin")).toBe("http://localhost:3000");
+    expect(cookieStore.delete).toHaveBeenCalledWith("bloghub_refresh");
+  });
+});
 describe("session rotation", () => {
   it("shares one refresh and uses the returned expiry", async () => {
     const fetcher = vi
       .fn()
       .mockImplementation(async (url: string) =>
         url.endsWith("/auth/refresh")
-          ? Response.json({ accessToken: "fresh", expiresIn: 3600 })
+          ? Response.json({ accessToken: "fresh", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } })
           : Response.json({ ok: true }),
       );
     vi.stubGlobal("fetch", fetcher);
@@ -104,7 +181,7 @@ describe("session rotation", () => {
       "fetch",
       vi.fn(async (url: string, options: RequestInit) =>
         url.endsWith("/auth/refresh")
-          ? Response.json({ accessToken: "new", expiresIn: 3600 })
+          ? Response.json({ accessToken: "new", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } })
           : new Headers(options.headers).get("Authorization") === "Bearer old"
             ? Response.json({ message: "Expired" }, { status: 401 })
             : Response.json({ ok: true }),
@@ -140,7 +217,7 @@ describe("session rotation", () => {
       vi
         .fn()
         .mockResolvedValue(
-          Response.json({ accessToken: "fresh", expiresIn: 3600 }),
+          Response.json({ accessToken: "fresh", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } }),
         ),
     );
     const session = await import("@/lib/session");
@@ -225,6 +302,7 @@ describe("safe articles and writing", () => {
       status: "draft" as const,
     };
     expect(validatePost(input, false)).toBe("");
+    expect(validatePost({ ...input, coverImageUrl: "/images/12345678-1234-1234-1234-123456789abc.png" }, false)).toBe("");
     expect(validatePost(input, true)).toContain("category");
     expect(
       validatePost(

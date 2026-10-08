@@ -29,68 +29,74 @@ export default function SearchFilters({
         );
       }}
     >
-      <label>
-        Search stories
-        <input
-          className="form-control"
-          name="q"
-          type="search"
-          maxLength={200}
-          defaultValue={filters.q}
-          placeholder="A title or an idea…"
-        />
-      </label>
-      <label>
-        Category
-        <select
-          className="form-control"
-          value={category}
-          onChange={(e) => {
-            setCategory(e.target.value);
-            setTag("");
-          }}
-        >
-          <option value="">All categories</option>
-          {categories.map((item) => (
-            <option value={item.slug} key={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Tag
-        <select
-          className="form-control"
-          value={tag}
-          onChange={(e) => setTag(e.target.value)}
-        >
-          <option value="">All tags</option>
-          {tags
-            .filter((item) => !categoryId || item.categoryId === categoryId)
-            .map((item) => (
+      <div className="search-primary">
+        <label className="story-search">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m16 16 4.5 4.5" />
+          </svg>
+          <input
+            className="form-control"
+            aria-label="Search stories"
+            name="q"
+            type="search"
+            maxLength={200}
+            defaultValue={filters.q}
+            placeholder="Find your next great read…"
+          />
+        </label>
+        <button className="button button-primary" type="submit">
+          Search <span aria-hidden="true">↗</span>
+        </button>
+      </div>
+      <div className="search-refinements">
+        <label>
+          Category
+          <select
+            className="form-control"
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setTag("");
+            }}
+          >
+            <option value="">All categories</option>
+            {categories.map((item) => (
               <option value={item.slug} key={item.id}>
                 {item.name}
               </option>
             ))}
-        </select>
-      </label>
-      <label>
-        Author
-        <input
-          className="form-control"
-          name="author"
-          maxLength={100}
-          defaultValue={filters.author}
-          placeholder="Author name"
-        />
-      </label>
-      <div className="filter-actions">
-        <button className="button button-primary" type="submit">
-          Search
-        </button>
-        <Link className="text-link" href="/#journal">
-          Clear
+          </select>
+        </label>
+        <label>
+          Tag
+          <select
+            className="form-control"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          >
+            <option value="">All tags</option>
+            {tags
+              .filter((item) => !categoryId || item.categoryId === categoryId)
+              .map((item) => (
+                <option value={item.slug} key={item.id}>
+                  {item.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Author
+          <input
+            className="form-control"
+            name="author"
+            maxLength={100}
+            defaultValue={filters.author}
+            placeholder="Author name"
+          />
+        </label>
+        <Link className="search-clear" href="/#journal">
+          <span aria-hidden="true">↺</span> Clear filters
         </Link>
       </div>
     </form>

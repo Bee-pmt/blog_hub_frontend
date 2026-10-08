@@ -13,8 +13,8 @@ export default function Header() {
           <Link href="/#journal">Journal</Link>
           <Link href="/#about">About</Link>
           <AccountNav />
+          <ThemeSelect />
         </nav>
-        <ThemeSelect />
       </div>
     </header>
   );

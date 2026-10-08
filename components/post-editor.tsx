@@ -9,6 +9,7 @@ import {
   Tag,
   dateLabel,
   errorMessage,
+  blogImageUrl,
 } from "@/lib/api";
 import { needsSourceMode, validatePost } from "@/lib/editor";
 import { useAuth } from "./auth-provider";
@@ -78,10 +79,22 @@ export default function PostEditor({
   const [deleting, setDeleting] = useState(false);
   const [visualVersion, setVisualVersion] = useState(0);
   const [baseline, setBaseline] = useState(JSON.stringify(emptyDraft));
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const imageInput = useRef<HTMLInputElement>(null);
   const leaveAllowed = useRef(false);
   const saveRunning = useRef(false);
   const storageKey = `bloghub-recovery:${user?.id}:${id || "new"}`;
-  const dirty = !loading && JSON.stringify(draft) !== baseline;
+  const dirty = !loading && (JSON.stringify(draft) !== baseline || !!imageFile);
+  useEffect(() => {
+    const preview = imageFile ? URL.createObjectURL(imageFile) : "";
+    // The preview exists only while this local file is selected.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setImagePreview(preview);
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [imageFile]);
   useEffect(() => {
     // Loading state belongs to this remote request, including filter changes and retries.
     let active = true;
@@ -109,6 +122,7 @@ export default function PostEditor({
         setCategories(nextCategories);
         setTags(nextTags);
         setPost(nextPost);
+        setImageFile(null);
         setDraft(initial);
         setBaseline(JSON.stringify(initial));
         setMode(needsSourceMode(initial.content) ? "source" : "visual");
@@ -250,7 +264,13 @@ export default function PostEditor({
       content: draft.content,
       ...(draft.categoryId ? { categoryId: draft.categoryId } : {}),
       tagIds: draft.tagIds,
-      coverImageUrl: draft.coverImageUrl.trim() || null,
+      ...(!imageFile && draft.coverImageUrl !== (post?.coverImageUrl || "")
+        ? {
+            coverImageUrl:
+              blogImageUrl(draft.coverImageUrl.trim()) ||
+              draft.coverImageUrl.trim() || null,
+          }
+        : {}),
       status,
     };
     const validation = validatePost(input, !id);
@@ -288,9 +308,20 @@ export default function PostEditor({
       } catch {
         /* Server saving still works without local storage. */
       }
+      let body: string | FormData = JSON.stringify(input);
+      if (imageFile) {
+        const form = new FormData();
+        form.set("title", input.title);
+        form.set("content", input.content);
+        if (input.categoryId) form.set("categoryId", input.categoryId);
+        form.set("tagIds", JSON.stringify(input.tagIds));
+        form.set("status", status);
+        form.set("image", imageFile);
+        body = form;
+      }
       const saved = await api<Blog>(id ? `/blogs/${id}` : "/blogs", {
         method: id ? "PATCH" : "POST",
-        body: JSON.stringify(input),
+        body,
       });
       const nextDraft = {
         ...draft,
@@ -303,6 +334,8 @@ export default function PostEditor({
       setBaseline(JSON.stringify(nextDraft));
       setDraft(nextDraft);
       setPost(saved);
+      setImageFile(null);
+      if (imageInput.current) imageInput.current.value = "";
       setVisualVersion((value) => value + 1);
       try {
         localStorage.removeItem(storageKey);
@@ -471,19 +504,69 @@ export default function PostEditor({
             </select>
           </label>
           <label>
-            Cover image URL <span className="muted">(optional)</span>
+            Cover image <span className="muted">(optional)</span>
             <input
+              ref={imageInput}
               className="form-control"
-              type="url"
-              value={draft.coverImageUrl}
-              maxLength={2048}
-              placeholder="https://…"
-              onChange={(event) => update("coverImageUrl", event.target.value)}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (
+                  !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+                ) {
+                  setError("Choose a JPEG, PNG, or WebP image.");
+                  event.target.value = "";
+                  return;
+                }
+                if (!file.size || file.size > 5 * 1024 * 1024) {
+                  setError("Choose a non-empty image of up to 5 MB.");
+                  event.target.value = "";
+                  return;
+                }
+                setImageFile(file);
+                setError("");
+                setNotice("");
+              }}
             />
           </label>
         </div>
-        {draft.coverImageUrl && (
-          <BlogImage src={draft.coverImageUrl} className="editor-cover" />
+        <p className="field-help">
+          JPEG, PNG, or WebP · Up to 5 MB. Your image uploads when you save or publish.
+          {imageFile && " Reselect the image if you reload before saving."}
+        </p>
+        {imagePreview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imagePreview}
+            alt="Selected cover preview"
+            className="editor-cover"
+          />
+        ) : draft.coverImageUrl ? (
+          <BlogImage
+            src={draft.coverImageUrl}
+            alt="Story cover"
+            className="editor-cover"
+          />
+        ) : null}
+        {(imageFile || draft.coverImageUrl) && (
+          <div className="actions">
+            {imageFile && (
+              <span className="field-help">Selected: {imageFile.name}</span>
+            )}
+            <button
+              type="button"
+              className="text-link"
+              onClick={() => {
+                setImageFile(null);
+                update("coverImageUrl", "");
+                if (imageInput.current) imageInput.current.value = "";
+              }}
+            >
+              Remove cover image
+            </button>
+          </div>
         )}
         <fieldset className="tags-field">
           <legend>

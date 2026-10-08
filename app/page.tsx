@@ -50,11 +50,12 @@ async function Journal({ searchParams }: PageProps<"/">) {
   return (
     <>
       <div className="category-discovery" aria-label="Discover categories">
-        <Link href="/#journal">All stories</Link>
+        <Link href="/#journal" aria-current={!filters.category ? "page" : undefined}>All stories</Link>
         {categories.map((item) => (
           <Link
             key={item.id}
             href={`/${queryString({ category: item.slug })}#journal`}
+            aria-current={filters.category === item.slug ? "page" : undefined}
           >
             {item.name}
           </Link>
@@ -116,7 +117,7 @@ export default function Home(props: PageProps<"/">) {
         <div>
           <h2>
             Everyone has something
-            <br className="desktop-break" /> worth sharing.
+            <br className="desktop-break" /> worth sharing for.
           </h2>
           <p>
             This is a place to think out loud, tell your story, and discover

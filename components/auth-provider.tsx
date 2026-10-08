@@ -11,8 +11,6 @@ import Link from "next/link";
 import {
   ApiError,
   errorMessage,
-  request,
-  TokenResponse,
   User,
 } from "@/lib/api";
 import {
@@ -22,12 +20,13 @@ import {
   sessionLock,
   setSession,
 } from "@/lib/session";
+import { submitAuthAction, logoutAction } from "@/action/action";
 type Auth = {
   user: User | null;
   loading: boolean;
   error: string;
   restore: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (form: FormData) => Promise<void>;
   logout: () => Promise<void>;
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
 };
@@ -88,6 +87,7 @@ export default function AuthProvider({
       };
     }
   }, [restore]);
+
   const api = useCallback(async <T,>(path: string, options?: RequestInit) => {
     try {
       return await authenticatedRequest<T>(path, options);
@@ -99,14 +99,13 @@ export default function AuthProvider({
       throw failure;
     }
   }, []);
-  async function login(email: string, password: string) {
+  
+  async function login(form: FormData) {
     ++restoreId.current;
     await sessionLock(async () => {
-      const data = await request<TokenResponse>("/auth/login", {
-        method: "POST",
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
+      const result = await submitAuthAction("login", form);
+      if (!result.data) throw new ApiError(result.error, result.status);
+      const data = result.data;
       clearSession();
       setSession(data);
       setUser(await authenticatedRequest<User>("/auth/me"));
@@ -116,9 +115,10 @@ export default function AuthProvider({
     channel.current?.postMessage("login");
   }
   async function logout() {
-    await sessionLock(() =>
-      request<void>("/auth/logout", { method: "POST", credentials: "include" }),
-    );
+    await sessionLock(async () => {
+      const result = await logoutAction();
+      if (result.error) throw new ApiError(result.error, result.status);
+    });
     ++restoreId.current;
     clearSession();
     setUser(null);
@@ -141,42 +141,41 @@ export default function AuthProvider({
   );
 }
 export function AccountNav() {
-  const { user, loading, logout } = useAuth();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  if (loading)
+  const { user } = useAuth();
+  if (!user)
     return (
-      <span className="muted" aria-live="polite">
-        Account…
-      </span>
+      <Link
+        className="nav-account-button"
+        href="/login"
+        aria-label="Sign in"
+        title="Sign in"
+      >
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+        </svg>
+      </Link>
     );
-  if (!user) return <Link href="/login">Sign in</Link>;
   return (
     <>
-      <Link href="/dashboard">Dashboard</Link>
-      <button
-        className="nav-button"
-        data-leave-editor
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setError("");
-          try {
-            await logout();
-          } catch (failure) {
-            setError(errorMessage(failure));
-          } finally {
-            setBusy(false);
-          }
-        }}
+      <Link
+        className="nav-account-button"
+        href="/dashboard"
+        aria-label="Profile"
+        title={user.displayName}
       >
-        Sign out
-      </button>
-      {error && (
-        <span role="alert" className="nav-error">
-          {error}
+        <span aria-hidden="true">
+          {Array.from(user.displayName.trim())[0]?.toLocaleUpperCase() || "U"}
         </span>
-      )}
+      </Link>
     </>
   );
 }

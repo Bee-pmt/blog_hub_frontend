@@ -38,10 +38,22 @@ test("published stories, combined URL filters, pagination and safe article", asy
   await expect(page.locator(".prose script")).toHaveCount(0);
 });
 test("register, sign in, reload session and sign out", async ({ page }) => {
-  await page.goto("/register");
+  const browserAuthRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/auth\/(login|register|refresh|logout)$/.test(request.url())) {
+      browserAuthRequests.push(request.url());
+    }
+  });
+  await page.goto("/");
+  await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+  await page.getByRole("link", { name: "Create an account", exact: true }).click();
+  await expect(page).toHaveURL(/\/register$/);
   await page.getByLabel("Display name", { exact: true }).fill("New Writer");
-  await page.getByLabel("Email", { exact: true }).fill("new@test.local");
-  await page.getByLabel("Password", { exact: true }).fill("password123");
+  const registrationForm = page.locator(".account-card:visible");
+  await registrationForm.getByLabel("Email", { exact: true }).fill("new@test.local");
+  await registrationForm.getByLabel("Password", { exact: true }).fill("password123");
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
@@ -49,12 +61,19 @@ test("register, sign in, reload session and sign out", async ({ page }) => {
     page.getByRole("heading", { name: "You’re ready to write." }),
   ).toBeVisible();
   await login(page, "new@test.local");
+  const refreshCookie = (await page.context().cookies()).find((cookie) => cookie.name === "bloghub_refresh");
+  expect(refreshCookie).toMatchObject({ httpOnly: true, path: "/", sameSite: "Lax" });
+  await expect(page.getByRole("link", { name: "Profile", exact: true })).toHaveText("N");
+  await expect(page.locator(".site-header").getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await expect(page.locator(".dashboard-sidebar").getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "New Writer", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=/);
+  expect(browserAuthRequests).toEqual([]);
+  expect((await page.context().cookies()).some((cookie) => cookie.name === "bloghub_refresh")).toBe(false);
 });
 test("create draft, reopen unchanged Markdown, publish and unpublish", async ({
   page,
@@ -192,10 +211,18 @@ test("mobile layout, dark theme and keyboard accessible controls", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByText("12 stories", { exact: true })).toBeVisible();
-  await page.getByRole("combobox", { name: "Appearance" }).selectOption("dark");
+  const themeSwitch = page.getByRole("switch", { name: "Dark mode" });
+  await expect(themeSwitch).toHaveAttribute("aria-checked", "false");
+  await themeSwitch.click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(themeSwitch).toHaveAttribute("aria-checked", "true");
+  await themeSwitch.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await themeSwitch.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".site-nav > :last-child")).toHaveAttribute("role", "switch");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -251,4 +278,54 @@ test("post deletion requires confirmation and removes the story", async ({
   await expect(
     page.getByRole("heading", { name: "Private draft", exact: true }),
   ).toHaveCount(0);
+});
+
+test("device cover upload, replacement, failed save, publication and removal", async ({ page, request }) => {
+  const image = {
+    name: "cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=", "base64"),
+  };
+  await login(page);
+  await page.goto("/dashboard/posts/new");
+  await page.getByLabel("Story title", { exact: true }).fill("A story with a device photo");
+  await page.getByRole("combobox", { name: "Category", exact: true }).selectOption("cat-1");
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.getByRole("textbox", { name: "Story content", exact: true }).fill("## A photographed story");
+  const picker = page.locator('input[type="file"]:visible');
+  await picker.setInputFiles({ name: "bad.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg/>") });
+  await expect(page.locator('.notice[role="alert"]')).toHaveText("Choose a JPEG, PNG, or WebP image.");
+  await picker.setInputFiles({ ...image, buffer: Buffer.alloc(5 * 1024 * 1024 + 1) });
+  await expect(page.locator('.notice[role="alert"]')).toHaveText("Choose a non-empty image of up to 5 MB.");
+  await picker.setInputFiles(image);
+  await expect(page.getByRole("img", { name: "Selected cover preview" })).toBeVisible();
+  const created = page.waitForResponse((response) => response.url() === `${api}/blogs` && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  const firstResponse = await created;
+  expect(firstResponse.request().headers()["content-type"]).toContain("multipart/form-data; boundary=");
+  const first = await firstResponse.json();
+  expect(first.coverImageUrl).toMatch(/^\/images\/.+\.png$/);
+  await expect(page).toHaveURL(/\/posts\/[^/]+\/edit$/);
+  await expect(page.getByRole("img", { name: "Story cover", exact: true })).toHaveAttribute("src", `http://localhost:5301${first.coverImageUrl}`);
+  await picker.setInputFiles({ ...image, name: "replacement.png" });
+  await request.post(`${api}/__fail-save`);
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.locator('.notice[role="alert"]')).toHaveText("Temporary save failure");
+  await expect(page.getByText("Selected: replacement.png", { exact: true })).toBeVisible();
+  const replaced = page.waitForResponse((response) => response.url() === `${api}/blogs/${first.id}` && response.request().method() === "PATCH" && response.ok());
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  const replacement = await (await replaced).json();
+  expect(replacement.coverImageUrl).not.toBe(first.coverImageUrl);
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Read story", exact: false }).click();
+  const publicCover = page.locator(".article-cover");
+  await expect(publicCover).toHaveAttribute("src", `http://localhost:5301${replacement.coverImageUrl}`);
+  await expect.poll(() => publicCover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await page.goto(`/dashboard/posts/${first.id}/edit`);
+  await page.getByRole("button", { name: "Remove cover image", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("img", { name: "Story cover", exact: true })).toHaveCount(0);
 });

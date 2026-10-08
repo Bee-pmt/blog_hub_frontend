@@ -44,7 +44,7 @@ export type BlogInput = {
   content: string;
   categoryId?: string;
   tagIds: string[];
-  coverImageUrl: string | null;
+  coverImageUrl?: string | null;
   status: Blog["status"];
 };
 export type TokenResponse = { accessToken: string; expiresIn: number };
@@ -76,7 +76,8 @@ export async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData))
+    headers.set("Content-Type", "application/json");
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -147,6 +148,12 @@ export function httpUrl(value: string) {
   } catch {
     return false;
   }
+}
+export function blogImageUrl(value: string) {
+  if (httpUrl(value)) return value;
+  if (/^\/images\/[0-9a-f-]{36}\.(png|jpg|webp)$/i.test(value))
+    return new URL(value, new URL(API_BASE).origin).href;
+  return "";
 }
 export function dateLabel(value: string) {
   return new Intl.DateTimeFormat("en", {

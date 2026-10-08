@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { httpUrl } from "@/lib/api";
+import { blogImageUrl } from "@/lib/api";
 
 export default function BlogImage({
   src,
@@ -13,7 +13,8 @@ export default function BlogImage({
   className?: string;
 }) {
   const [failedSrc, setFailedSrc] = useState("");
-  if (!httpUrl(src) || failedSrc === src)
+  const imageUrl = blogImageUrl(src);
+  if (!imageUrl || failedSrc === imageUrl)
     return (
       <span
         className={`image-fallback ${className}`}
@@ -27,12 +28,12 @@ export default function BlogImage({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={src}
+      src={imageUrl}
       alt={alt}
       className={className}
       loading="lazy"
       referrerPolicy="no-referrer"
-      onError={() => setFailedSrc(src)}
+      onError={() => setFailedSrc(imageUrl)}
     />
   );
 }
