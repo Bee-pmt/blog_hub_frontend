@@ -143,11 +143,11 @@ export default function PostManager({ admin = false }: { admin?: boolean }) {
                     <div>
                       <span className="badge">{post.status}</span>
                       <h2>
-                        <Link
-                          href={`/dashboard/${admin ? "admin/" : ""}posts/${post.id}/edit`}
-                        >
-                          {post.title}
-                        </Link>
+                        {admin ? post.title : (
+                          <Link href={`/dashboard/posts/${post.id}/edit`}>
+                            {post.title}
+                          </Link>
+                        )}
                       </h2>
                       <p className="muted">
                         {post.categoryName} · Updated{" "}
@@ -156,12 +156,12 @@ export default function PostManager({ admin = false }: { admin?: boolean }) {
                       </p>
                     </div>
                     <div className="row-actions">
-                      <Link
+                      {!admin && <Link
                         className="text-link"
-                        href={`/dashboard/${admin ? "admin/" : ""}posts/${post.id}/edit`}
+                        href={`/dashboard/posts/${post.id}/edit`}
                       >
                         Edit
-                      </Link>
+                      </Link>}
                       {post.status === "published" && (
                         <Link
                           className="text-link"

@@ -258,11 +258,13 @@ test("admin moderates another author and deletes a category without deleting sto
 }) => {
   await login(page, "admin@test.local");
   await page.goto("/dashboard/admin/posts/story-2/edit");
-  await expect(
-    page.getByText("Editing Other Writer’s story.", { exact: false }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Unpublish", exact: true }).click();
-  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard\/admin\/posts$/);
+  await expect(page.getByRole("heading", { name: "All stories", exact: true })).toBeVisible();
+  await expect(page.locator('.manage-list a[href$="/edit"]')).toHaveCount(0);
+  const otherStory = page.locator(".manage-row").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
+  await expect(otherStory.getByRole("link", { name: "Read", exact: true })).toBeVisible();
+  await expect(otherStory.getByRole("button", { name: "Unpublish", exact: true })).toBeVisible();
+  await expect(otherStory.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
   await page.goto("/dashboard/taxonomy");
   await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
   const adminIdeasToggle = page.getByRole("button", { name: "Tags for Ideas", exact: true });
@@ -290,10 +292,8 @@ test("admin moderates another author and deletes a category without deleting sto
   await expect(
     page.getByText("Deleted successfully.", { exact: true }),
   ).toBeVisible();
-  await page.goto("/dashboard/admin/posts/story-2/edit");
-  await expect(
-    page.getByRole("combobox", { name: "Category", exact: true }),
-  ).toHaveValue("");
+  await page.goto("/blogs/thoughtful-story-2");
+  await expect(page.locator(".article-header .eyebrow")).toHaveText("Uncategorized");
 });
 test("mobile layout, dark theme and keyboard accessible controls", async ({
   page,

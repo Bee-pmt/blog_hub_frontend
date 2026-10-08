@@ -76,9 +76,11 @@ The current project uses root-level `app/`, `components/`, `lib/`, and the singu
 | `/dashboard/posts/[id]/edit` | Edit an owned story | Owner |
 | `/dashboard/taxonomy` | Category and tag management | Signed in, with role/ownership restrictions |
 | `/dashboard/admin/posts` | Manage all stories | Admin |
-| `/dashboard/admin/posts/[id]/edit` | Edit another author's story | Admin |
+| `/dashboard/admin/posts/[id]/edit` | Legacy URL; redirects to All stories | Admin workspace |
 
 The UI calls the dashboard “Profile” or “My workspace,” while its URL remains `/dashboard`. Dashboard pages are marked to prevent search indexing.
+
+Admin All stories retains Read, Publish/Unpublish, and confirmed Delete controls, without editor links. Owners edit posts through My stories, including admins' own posts. Publication controls send status updates to the backend, which remains responsible for authorizing them.
 
 Category management groups tags under expandable category rows. Authors see categories they created, plus categories containing their own tags; expanding a category shows only that author's tags. A category created by someone else provides grouping context and cannot be renamed by the author. Admins see and manage all categories and tags. The New tag category selector shows all categories for both roles, so an author can create a tag under another user's category even without owning any categories. The new tag belongs to its creator. Public discovery and the story editor also use all available categories and tags.
 
