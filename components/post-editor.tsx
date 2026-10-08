@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -276,6 +277,7 @@ export default function PostEditor({
     const validation = validatePost(input, !id);
     if (validation) {
       setError(validation);
+      toast.error(validation);
       return;
     }
     if (
@@ -289,6 +291,7 @@ export default function PostEditor({
       setError(
         "Some selected tags no longer belong to this category. Update your selection.",
       );
+      toast.error("Some selected tags no longer belong to this category. Update your selection.");
       return;
     }
     saveRunning.current = true;
@@ -342,8 +345,9 @@ export default function PostEditor({
       } catch {
         /* No recovery storage. */
       }
-      setNotice(
+      toast.success(
         status === "published" ? "Your story is published." : "Draft saved.",
+        { id: "post-save" },
       );
       window.dispatchEvent(new Event("bloghub-posts-changed"));
       if (!id) {
@@ -352,6 +356,7 @@ export default function PostEditor({
       }
     } catch (failure) {
       setError(errorMessage(failure));
+      toast.error(errorMessage(failure));
     } finally {
       saveRunning.current = false;
       setBusy(false);
@@ -517,11 +522,13 @@ export default function PostEditor({
                   !["image/jpeg", "image/png", "image/webp"].includes(file.type)
                 ) {
                   setError("Choose a JPEG, PNG, or WebP image.");
+                  toast.error("Choose a JPEG, PNG, or WebP image.");
                   event.target.value = "";
                   return;
                 }
                 if (!file.size || file.size > 5 * 1024 * 1024) {
                   setError("Choose a non-empty image of up to 5 MB.");
+                  toast.error("Choose a non-empty image of up to 5 MB.");
                   event.target.value = "";
                   return;
                 }
@@ -723,10 +730,12 @@ export default function PostEditor({
                 /* Storage unavailable. */
               }
               leaveAllowed.current = true;
+              toast.success("Story deleted.");
               router.replace(admin ? "/dashboard/admin/posts" : "/dashboard");
               window.dispatchEvent(new Event("bloghub-posts-changed"));
             } catch (failure) {
               setError(errorMessage(failure));
+              toast.error(errorMessage(failure));
             } finally {
               saveRunning.current = false;
               setBusy(false);

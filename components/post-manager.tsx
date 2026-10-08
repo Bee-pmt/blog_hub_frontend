@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import {
   BlogSummary as Blog,
@@ -67,8 +68,13 @@ export default function PostManager({ admin = false }: { admin?: boolean }) {
             }),
       });
       setRevision((value) => value + 1);
+      toast.success(
+        remove ? "Story deleted." : post.status === "draft"
+          ? "Your story is published." : "Story unpublished.",
+      );
     } catch (failure) {
       setError(errorMessage(failure));
+      toast.error(errorMessage(failure));
     } finally {
       setBusy("");
       setDeleting(null);

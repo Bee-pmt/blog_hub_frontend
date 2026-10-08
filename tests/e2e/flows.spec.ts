@@ -9,6 +9,7 @@ async function login(page: Page, email = "author@test.local") {
   await page.getByLabel("Password", { exact: true }).fill("password123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Signed in successfully." })).toBeVisible();
 }
 test("published stories, combined URL filters, pagination and safe article", async ({
   page,
@@ -60,6 +61,7 @@ test("register, sign in, reload session and sign out", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "You’re ready to write." }),
   ).toBeVisible();
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Your account has been created." })).toBeVisible();
   await login(page, "new@test.local");
   const refreshCookie = (await page.context().cookies()).find((cookie) => cookie.name === "bloghub_refresh");
   expect(refreshCookie).toMatchObject({ httpOnly: true, path: "/", sameSite: "Lax" });
@@ -72,6 +74,10 @@ test("register, sign in, reload session and sign out", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=/);
+  const signOutToast = page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Signed out successfully." });
+  await expect(signOutToast).toBeVisible();
+  await signOutToast.getByRole("button", { name: "Close toast", exact: true }).click();
+  await expect(signOutToast).toHaveCount(0);
   expect(browserAuthRequests).toEqual([]);
   expect((await page.context().cookies()).some((cookie) => cookie.name === "bloghub_refresh")).toBe(false);
 });
@@ -108,7 +114,7 @@ test("create draft, reopen unchanged Markdown, publish and unpublish", async ({
   ).toBeVisible();
   await page.goBack();
   await page.getByRole("button", { name: "Unpublish", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: /^Draft saved\.$/ })).toBeVisible();
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
 });
 test("failed save retains content and offers browser recovery after reload", async ({
   page,
@@ -145,7 +151,7 @@ test("failed save retains content and offers browser recovery after reload", asy
     page.getByRole("textbox", { name: "Story content", exact: true }),
   ).toHaveValue("Writing that must survive");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: /^Draft saved\.$/ })).toBeVisible();
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
 });
 test("author taxonomy permissions and blocked admin route", async ({
   page,
@@ -158,6 +164,13 @@ test("author taxonomy permissions and blocked admin route", async ({
   await expect(
     page.getByRole("textbox", { name: "Rename Life", exact: true }),
   ).toHaveCount(0);
+  await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
+  await expect(page.locator(".taxonomy-row").filter({ hasText: "/perspective" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Rename Thinking", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (1)", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags (1)", exact: true })).toBeVisible();
+  const categorySelect = page.getByRole("combobox", { name: "Category", exact: true });
+  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Ideas"]);
   await expect(
     page.getByRole("button", { name: "Delete", exact: true }),
   ).toHaveCount(0);
@@ -170,6 +183,9 @@ test("author taxonomy permissions and blocked admin route", async ({
     .getByRole("button", { name: "Rename", exact: true })
     .click();
   await expect(page.getByText("/fresh-ideas", { exact: true })).toBeVisible();
+  await expect(categorySelect.locator("option")).toHaveText(["Select a category", "Fresh Ideas"]);
+  await expect(page.locator(".taxonomy-row").filter({ hasText: "/life" })).toHaveCount(0);
+  await expect(page.locator(".taxonomy-row").filter({ hasText: "/perspective" })).toHaveCount(0);
   await page.goto("/dashboard/admin/posts");
   await expect(
     page.getByRole("heading", { name: "This workspace is for admins." }),
@@ -184,8 +200,15 @@ test("admin moderates another author and deletes a category without deleting sto
     page.getByText("Editing Other Writer’s story.", { exact: false }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Unpublish", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: /^Draft saved\.$/ })).toBeVisible();
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
   await page.goto("/dashboard/taxonomy");
+  await expect(page.getByRole("textbox", { name: "Rename Life", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Rename Thinking", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Rename Perspective", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Categories (2)", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags (2)", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Category", exact: true }).locator("option"))
+    .toHaveText(["Select a category", "Ideas", "Life"]);
   await page
     .locator(".taxonomy-row")
     .filter({ hasText: "/ideas" })
@@ -247,7 +270,7 @@ test("expired access refreshes and visual metadata edits preserve original Markd
   ).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Story title", { exact: true }).fill("A renamed draft");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: /^Draft saved\.$/ })).toBeVisible();
+  await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
   await page
     .getByRole("button", { name: "Markdown source", exact: true })
     .click();
@@ -311,6 +334,7 @@ test("device cover upload, replacement, failed save, publication and removal", a
   await request.post(`${api}/__fail-save`);
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.locator('.notice[role="alert"]')).toHaveText("Temporary save failure");
+  await expect(page.locator('[data-sonner-toast][data-type="error"]').filter({ hasText: "Temporary save failure" })).toBeVisible();
   await expect(page.getByText("Selected: replacement.png", { exact: true })).toBeVisible();
   const replaced = page.waitForResponse((response) => response.url() === `${api}/blogs/${first.id}` && response.request().method() === "PATCH" && response.ok());
   await page.getByRole("button", { name: "Save draft", exact: true }).click();

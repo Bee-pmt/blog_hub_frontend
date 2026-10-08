@@ -2,6 +2,8 @@
 
 Next.js App Router frontend for the existing BlogHub NestJS API. Includes the public journal, URL-backed discovery, safe Markdown articles, registration/login, author and admin workspaces, taxonomy management, and a rich text editor with browser recovery. Header and Footer are shared components. Follow `Rule.md` and the installed Next.js guides before extending it.
 
+See [Frontend architecture](architecture.md) for the folder structure, routes, component responsibilities, authentication, data flows, and image upload behavior.
+
 ## Local startup
 
 Use Node.js 20.19+ or a compatible newer LTS release.
@@ -54,7 +56,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run test:e2e
 - Browser recovery is local to an account and post, updated after one second and before saving or closing the page. Restore/Discard offers a recovery decision; successful saving and explicit logout clear copies. Recovery is not a server autosave and can be unavailable when browser storage is blocked. Write on a trusted browser and save explicitly.
 - Unsaved changes warn on in-app links, sign-out, reload/close, and history navigation in browsers supporting the Navigation API. Older browsers still offer recovery and close/reload warnings.
 - Authors can rename only taxonomy they created. Admins can moderate any post and delete taxonomy; deleting a category removes its tags and preserves affected stories as Uncategorized.
-- No uploads, comments, likes, password reset, profile editing, user administration, or deployment is included.
+- Comments, likes, password reset, profile editing, user administration, and deployment are not included.
 
 ## Live integration review
 

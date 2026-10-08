@@ -58,6 +58,15 @@ function reset() {
       createdAt: now,
       updatedAt: now,
     },
+    {
+      id: "tag-2",
+      name: "Perspective",
+      slug: "perspective",
+      categoryId: "cat-1",
+      createdById: "other",
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
   blogs = Array.from({ length: 12 }, (_, index) => ({
     id: `story-${index + 1}`,

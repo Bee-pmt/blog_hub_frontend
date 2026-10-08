@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { errorMessage, localReturnPath } from "@/lib/api";
@@ -62,11 +63,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                     const result = await submitAuthAction("register", form);
                     if (result.error) {
                       setError(result.error);
+                      toast.error(result.error);
                       return;
                     }
                     setRegistered(true);
+                    toast.success("Your account has been created. Sign in to get started.");
                   } else {
                     await login(form);
+                    toast.success("Signed in successfully.");
                     router.replace(
                       localReturnPath(
                         new URLSearchParams(window.location.search).get(
@@ -78,6 +82,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                   }
                 } catch (failure) {
                   setError(errorMessage(failure));
+                  toast.error(errorMessage(failure));
                 } finally {
                   setBusy(false);
                 }

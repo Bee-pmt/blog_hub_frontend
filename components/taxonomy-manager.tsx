@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Category, Tag, errorMessage } from "@/lib/api";
 import { useAuth } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
@@ -9,13 +10,18 @@ export default function TaxonomyManager() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState<{
     item: Category;
     kind: "categories" | "tags";
   } | null>(null);
+  const visibleCategories = categories.filter(
+    (item) => user?.role === "admin" || item.createdById === user?.id,
+  );
+  const visibleTags = tags.filter(
+    (item) => user?.role === "admin" || item.createdById === user?.id,
+  );
   useEffect(() => {
     // Loading state belongs to this remote request, including filter changes and retries.
     let active = true;
@@ -50,11 +56,11 @@ export default function TaxonomyManager() {
     const name = String(values.get("name") || "").trim();
     if (!name || !/[\p{L}\p{N}]/u.test(name)) {
       setError("Use a name containing at least one letter or number.");
+      toast.error("Use a name containing at least one letter or number.");
       return;
     }
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       await api(`/${kind}${id ? `/${id}` : ""}`, {
         method: id ? "PATCH" : "POST",
@@ -66,7 +72,7 @@ export default function TaxonomyManager() {
         }),
       });
       if (!id) form.reset();
-      setNotice(
+      toast.success(
         id
           ? "Name updated. Discovery links now use the new slug."
           : "Created successfully.",
@@ -74,6 +80,7 @@ export default function TaxonomyManager() {
       setRevision((value) => value + 1);
     } catch (failure) {
       setError(errorMessage(failure));
+      toast.error(errorMessage(failure));
     } finally {
       setBusy(false);
     }
@@ -133,7 +140,7 @@ export default function TaxonomyManager() {
         Create topics for your stories.{" "}
         {user?.role === "admin"
           ? "You can manage all entries."
-          : "You can rename entries you created."}
+          : "Only categories and tags you created are shown here. You can rename your entries."}
       </p>
       {error && (
         <p className="notice" role="alert">
@@ -147,11 +154,6 @@ export default function TaxonomyManager() {
           >
             Retry loading
           </button>
-        </p>
-      )}
-      {notice && (
-        <p className="notice" role="status">
-          {notice}
         </p>
       )}
       <div className="taxonomy-create">
@@ -189,7 +191,7 @@ export default function TaxonomyManager() {
               <option value="" disabled>
                 Select a category
               </option>
-              {categories.map((item) => (
+              {visibleCategories.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.name}
                 </option>
@@ -207,7 +209,7 @@ export default function TaxonomyManager() {
           </label>
           <button
             className="button button-primary"
-            disabled={busy || loading || !categories.length}
+            disabled={busy || loading || !visibleCategories.length}
           >
             Create tag
           </button>
@@ -221,20 +223,20 @@ export default function TaxonomyManager() {
         <>
           <section className="taxonomy-section">
             <h2>
-              Categories <span className="muted">({categories.length})</span>
+              Categories <span className="muted">({visibleCategories.length})</span>
             </h2>
-            {categories.length ? (
-              <ul>{categories.map((item) => entry(item, "categories"))}</ul>
+            {visibleCategories.length ? (
+              <ul>{visibleCategories.map((item) => entry(item, "categories"))}</ul>
             ) : (
               <p className="muted">Create your first category above.</p>
             )}
           </section>
           <section className="taxonomy-section">
             <h2>
-              Tags <span className="muted">({tags.length})</span>
+              Tags <span className="muted">({visibleTags.length})</span>
             </h2>
-            {tags.length ? (
-              <ul>{tags.map((item) => entry(item, "tags"))}</ul>
+            {visibleTags.length ? (
+              <ul>{visibleTags.map((item) => entry(item, "tags"))}</ul>
             ) : (
               <p className="muted">No tags yet. Tags belong to a category.</p>
             )}
@@ -258,10 +260,11 @@ export default function TaxonomyManager() {
               await api(`/${deleting.kind}/${deleting.item.id}`, {
                 method: "DELETE",
               });
-              setNotice("Deleted successfully.");
+              toast.success("Deleted successfully.");
               setRevision((value) => value + 1);
             } catch (failure) {
               setError(errorMessage(failure));
+              toast.error(errorMessage(failure));
             } finally {
               setBusy(false);
               setDeleting(null);

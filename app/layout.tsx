@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+import { Toaster } from "sonner";
 import localFont from "next/font/local";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
@@ -58,6 +60,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
           <Footer />
         </AuthProvider>
+        <Toaster
+          position="top-right"
+          closeButton
+          style={{
+            "--normal-bg": "var(--surface)",
+            "--normal-text": "var(--foreground)",
+            "--normal-border": "var(--border)",
+          } as CSSProperties}
+        />
       </body>
     </html>
   );

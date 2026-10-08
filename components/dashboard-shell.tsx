@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-provider";
@@ -117,8 +118,10 @@ export default function DashboardShell({
               setLogoutError("");
               try {
                 await logout();
+                toast.success("Signed out successfully.");
               } catch (failure) {
                 setLogoutError(errorMessage(failure));
+                toast.error(errorMessage(failure));
               } finally {
                 setSigningOut(false);
               }
