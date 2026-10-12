@@ -1,16 +1,26 @@
 "use client";
+import type {
+  Category,
+  Tag,
+  Blog,
+  BlogInput,
+  Draft,
+  Recovery,
+  PostEditorProps,
+} from "@/type/type";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Blog,
-  BlogInput,
-  Category,
-  Tag,
   dateLabel,
   errorMessage,
   blogImageUrl,
+  getCategories,
+  getTags,
+  getEditableBlog,
+  saveBlog,
+  deleteBlog,
 } from "@/lib/api";
 import { needsSourceMode, validatePost } from "@/lib/editor";
 import { useAuth } from "./auth-provider";
@@ -19,13 +29,6 @@ import Markdown from "./markdown";
 import BlogImage from "./blog-image";
 import ConfirmDialog from "./confirm-dialog";
 
-type Draft = {
-  title: string;
-  content: string;
-  categoryId: string;
-  tagIds: string[];
-  coverImageUrl: string;
-};
 const emptyDraft: Draft = {
   title: "",
   content: "",
@@ -33,7 +36,6 @@ const emptyDraft: Draft = {
   tagIds: [],
   coverImageUrl: "",
 };
-type Recovery = { draft: Draft; savedAt: string; baseUpdatedAt: string | null };
 function readRecovery(value: string | null): Recovery | null {
   try {
     const copy = JSON.parse(value || "null");
@@ -59,10 +61,7 @@ function readRecovery(value: string | null): Recovery | null {
 export default function PostEditor({
   id,
   admin = false,
-}: {
-  id?: string;
-  admin?: boolean;
-}) {
+}: PostEditorProps) {
   const { user, api } = useAuth();
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -103,10 +102,10 @@ export default function PostEditor({
     setLoading(true);
     setLoadError("");
     Promise.all([
-      api<Category[]>("/categories"),
-      api<Tag[]>("/tags"),
+      getCategories(api),
+      getTags(api),
       id
-        ? api<Blog>(`${admin ? "/admin" : "/me"}/blogs/${id}`)
+        ? getEditableBlog(id, admin, api)
         : Promise.resolve(null),
     ])
       .then(([nextCategories, nextTags, nextPost]) => {
@@ -311,21 +310,7 @@ export default function PostEditor({
       } catch {
         /* Server saving still works without local storage. */
       }
-      let body: string | FormData = JSON.stringify(input);
-      if (imageFile) {
-        const form = new FormData();
-        form.set("title", input.title);
-        form.set("content", input.content);
-        if (input.categoryId) form.set("categoryId", input.categoryId);
-        form.set("tagIds", JSON.stringify(input.tagIds));
-        form.set("status", status);
-        form.set("image", imageFile);
-        body = form;
-      }
-      const saved = await api<Blog>(id ? `/blogs/${id}` : "/blogs", {
-        method: id ? "PATCH" : "POST",
-        body,
-      });
+      const saved = await saveBlog(input, id, imageFile, api);
       const nextDraft = {
         ...draft,
         title: saved.title,
@@ -718,12 +703,12 @@ export default function PostEditor({
           busy={busy}
           onCancel={() => setDeleting(false)}
           onConfirm={async () => {
-            if (saveRunning.current) return;
+            if (!id || saveRunning.current) return;
             saveRunning.current = true;
             setBusy(true);
             setError("");
             try {
-              await api(`/blogs/${id}`, { method: "DELETE" });
+              await deleteBlog(id, api);
               try {
                 localStorage.removeItem(storageKey);
               } catch {

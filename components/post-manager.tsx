@@ -1,17 +1,18 @@
 "use client";
+import type { BlogSummary as Blog, BlogPage, PostManagerProps } from "@/type/type";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
-  BlogSummary as Blog,
-  BlogPage,
   dateLabel,
   errorMessage,
-  queryString,
+  getManagedBlogs,
+  deleteBlog,
+  setBlogStatus,
 } from "@/lib/api";
 import { useAuth } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
-export default function PostManager({ admin = false }: { admin?: boolean }) {
+export default function PostManager({ admin = false }: PostManagerProps) {
   const { api } = useAuth();
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
@@ -27,9 +28,7 @@ export default function PostManager({ admin = false }: { admin?: boolean }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
-    api<BlogPage>(
-      `${admin ? "/admin" : "/me"}/blogs${queryString({ status, page, limit: 10 })}`,
-    )
+    getManagedBlogs(admin, { status, page, limit: 10 }, api)
       .then((result) => {
         if (active) {
           if (page > 1 && page > result.totalPages)
@@ -57,16 +56,16 @@ export default function PostManager({ admin = false }: { admin?: boolean }) {
     setBusy(post.id);
     setError("");
     try {
-      await api(`/blogs/${post.id}`, {
-        method: remove ? "DELETE" : "PATCH",
-        ...(remove
-          ? {}
-          : {
-              body: JSON.stringify({
-                status: post.status === "draft" ? "published" : "draft",
-              }),
-            }),
-      });
+      if (remove) await deleteBlog(post.id, api);
+      else {
+        await setBlogStatus(
+          post.id,
+          post.status === "draft" ? "published" : "draft",
+          api,
+        );
+      }
+  // const blogs  = apiRequest("/blogs")
+
       setRevision((value) => value + 1);
       toast.success(
         remove ? "Story deleted." : post.status === "draft"

@@ -1,4 +1,5 @@
-import { ApiError, request, TokenResponse } from "./api";
+import type { TokenResponse } from "@/type/type";
+import { ApiError, apiRequest } from "./api";
 import { refreshSessionAction } from "@/action/action";
 let accessToken = "";
 let expiresAt = 0;
@@ -43,7 +44,7 @@ export async function authenticatedRequest<T>(
       ? accessToken
       : await refreshSession();
   const send = (value: string) =>
-    request<T>(path, {
+    apiRequest<T>(path, {
       ...options,
       headers: {
         ...Object.fromEntries(new Headers(options.headers)),

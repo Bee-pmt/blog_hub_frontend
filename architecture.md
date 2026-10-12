@@ -11,6 +11,7 @@ This document describes the current frontend implementation. The frontend is a N
 | Tailwind CSS 4 and global CSS | Styling, layout, responsive behavior, and theme variables |
 | Tiptap | Visual editing with Markdown content |
 | React Markdown and remark-gfm | Article and editor preview rendering |
+| Zustand | Shared authentication state and actions |
 | Sonner | Toast notifications for authentication and workspace actions |
 | Vitest | Component and application logic tests |
 | Playwright | Browser flows against an isolated mock API |
@@ -50,11 +51,16 @@ blog_frontend/
 │   └── fonts/                # Local Geist font files
 ├── components/               # Shared UI and feature components
 ├── lib/
-│   ├── api.ts                # API requests, response types, and URL helpers
+│   ├── api.ts                # API request functions and URL helpers
 │   ├── session.ts            # In-memory access token and refresh coordination
 │   └── editor.ts             # Post validation and Markdown editing helpers
+├── store/
+│   └── auth-store.ts         # Zustand account state and actions
+├── type/
+│   └── type.ts               # Application data, state, and component prop types
 ├── tests/
 │   ├── frontend.test.tsx     # Unit and component tests
+│   ├── auth-store.test.ts    # Zustand account state and session lifecycle tests
 │   └── e2e/                  # Playwright flows and isolated mock backend
 ├── next.config.ts
 ├── package.json
@@ -88,12 +94,12 @@ Category management groups tags under expandable category rows. Authors see cate
 
 ## Layout and components
 
-The root layout loads local fonts and global styles, supplies metadata, and adds a keyboard skip link. `AuthProvider` surrounds the shared Header, route content, and Footer.
+The root layout loads local fonts and global styles, supplies metadata, and adds a keyboard skip link. `AuthProvider` surrounds the shared Header, route content, and Footer. It creates a Zustand store for that component tree and starts session restoration after mounting.
 
 | Component | Responsibility |
 | --- | --- |
 | `header.tsx` / `footer.tsx` | Shared site navigation and footer |
-| `auth-provider.tsx` | Account state, session restoration, login, logout, and authenticated requests |
+| `auth-provider.tsx` | Provides the Zustand store, starts session synchronization, and exposes `useAuth` |
 | `auth-form.tsx` | Interactive login and registration forms |
 | `dashboard-shell.tsx` | Session guard, workspace navigation, and bottom sign-out button |
 | `search-filters.tsx` | URL-backed search and category/tag/author filters |
@@ -119,13 +125,23 @@ The shared request helper uses `cache: "no-store"`. Although Next.js Cache Compo
 
 ## API layer
 
-[`lib/api.ts`](lib/api.ts) is shared by server and browser code. It contains API response types, query-string helpers, image URL resolution, error formatting, and the main request function.
+[`lib/api.ts`](lib/api.ts) is shared by server and browser code. It contains query-string helpers, image URL resolution, error formatting, and the shared `apiRequest` function. Application types live in [`type/type.ts`](type/type.ts) and are imported with `import type`, including API models, request inputs, authentication state, editor recovery data, and component props. All backend endpoint paths and payload construction live here in exported functions such as `getBlogs`, `saveBlog`, `getCategories`, and `saveTaxonomy`. Pages and components call these functions instead of constructing requests. Protected functions receive the authenticated `api` function from `AuthProvider`, preserving token refresh and session handling without importing browser session state into the shared module.
+
+For example, a Server Component calls `await getBlogs({ page: 1, limit: 9 })`. A protected Client Component gets `api` from `useAuth()` and calls `await getCategories(api)` or `await saveBlog(input, id, imageFile, api)`. Add future backend endpoints to this module and reuse `apiRequest` for transport and error handling.
 
 Requests use `NEXT_PUBLIC_API_BASE_URL`, defaulting to `http://localhost:5300/api/v1`. The request helper applies a timeout, parses JSON responses, handles empty responses, and turns backend failures into `ApiError` objects with a status and readable message.
 
 JSON requests receive a JSON content type. `FormData` requests leave that header unset so the browser can generate the multipart boundary correctly.
 
 The backend remains the source of truth for validation and permissions. Frontend validation provides earlier feedback but does not replace backend checks.
+
+## State management
+
+[`store/auth-store.ts`](store/auth-store.ts) uses Zustand for shared account state: `user`, `loading`, and `error`, together with login, logout, restore, and authenticated request actions. Existing components access it through `useAuth()` in `auth-provider.tsx`. The small React context only provides the store instance; Zustand manages state and subscriptions.
+
+The provider creates a fresh store with the same initial values during server and browser rendering, following [Zustand’s Next.js guidance](https://zustand.docs.pmnd.rs/learn/guides/nextjs). Authentication work starts in an effect. There is no persisted Zustand state; access tokens stay in session memory and the refresh token stays in the HttpOnly cookie.
+
+Form inputs, dialogs, story lists, taxonomy data, and editor drafts remain local component state. URL filters and the existing theme and draft recovery storage retain their current responsibilities.
 
 ## Authentication and session lifecycle
 
@@ -149,7 +165,7 @@ sequenceDiagram
     Note over UI: Access token stays in memory
 ```
 
-The backend refresh cookie is explicitly copied to a frontend `bloghub_refresh` cookie. It is HttpOnly, uses `SameSite=Lax`, has a root path, and is secure in production. Server Actions forward the cookie and request origin when communicating with the backend. Server-side fetch does not automatically transfer backend cookies to the browser.
+The backend refresh cookie is explicitly copied to a frontend `bloghub_refresh` cookie. It is HttpOnly, uses `SameSite=Lax`, has a root path, and is secure in production. Server Actions forward the cookie and request origin through `requestAuthSession` in `lib/api.ts`. Its response callback lets the action copy or clear cookies while shared request handling parses responses and errors. Server-side fetch does not automatically transfer backend cookies to the browser.
 
 [`lib/session.ts`](lib/session.ts) keeps the access token and expiry in browser memory, not local storage. It refreshes a token near expiry and retries an authenticated request once after a 401. Network failures on mutations are not automatically retried.
 

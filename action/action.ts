@@ -1,13 +1,8 @@
 "use server";
+import type { TokenResponse } from "@/type/type";
 
 import { cookies, headers } from "next/headers";
-import {
-  API_BASE,
-  ApiError,
-  errorMessage,
-  request,
-  TokenResponse,
-} from "@/lib/api";
+import { ApiError, errorMessage, registerUser, requestAuthSession } from "@/lib/api";
 
 const refreshCookie = "bloghub_refresh";
 
@@ -26,45 +21,21 @@ async function authRequest(
     requestHeaders.set("Cookie", `${refreshCookie}=${refreshToken}`);
   if (body) requestHeaders.set("Content-Type", "application/json");
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}/auth/${path}`, {
-      method: "POST",
-      headers: requestHeaders,
-      body: body ? JSON.stringify(body) : undefined,
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch {
-    throw new ApiError(
-      "Unable to reach BlogHub. Check your connection and try again.",
-      0,
-    );
-  }
-
-  if (
-    (response.status === 401 && path === "refresh") ||
-    (response.ok && path === "logout")
-  ) {
-    cookieStore.delete(refreshCookie);
-  }
-  const data =
-    response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = Array.isArray(data?.message)
-      ? data.message.join(" · ")
-      : data?.message;
-    throw new ApiError(
-      typeof message === "string"
-        ? message
-        : "Unable to complete this request.",
-      response.status,
-    );
-  }
+  let backendCookie: string | undefined;
+  const data = await requestAuthSession(path, requestHeaders, body, (response) => {
+    if (
+      (response.status === 401 && path === "refresh") ||
+      (response.ok && path === "logout")
+    ) {
+      cookieStore.delete(refreshCookie);
+    }
+    if (response.ok && path !== "logout") {
+      backendCookie = response.headers
+        .getSetCookie()
+        .find((cookie) => cookie.startsWith(`${refreshCookie}=`));
+    }
+  });
   if (path === "logout") return null;
-  const backendCookie = response.headers
-    .getSetCookie()
-    .find((cookie) => cookie.startsWith(`${refreshCookie}=`));
   const value = backendCookie?.split(";")[0].slice(refreshCookie.length + 1);
   if (
     !value ||
@@ -116,10 +87,7 @@ export async function submitAuthAction(
           400,
         );
       }
-      await request("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ displayName, email, password }),
-      });
+      await registerUser({ displayName, email, password });
       return { data: null, error: "", status: 200 };
     }
     return {

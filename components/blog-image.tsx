@@ -1,4 +1,5 @@
 "use client";
+import type { BlogImageProps } from "@/type/type";
 
 import { useState } from "react";
 import { blogImageUrl } from "@/lib/api";
@@ -7,11 +8,7 @@ export default function BlogImage({
   src,
   alt = "",
   className = "",
-}: {
-  src: string;
-  alt?: string;
-  className?: string;
-}) {
+}: BlogImageProps) {
   const [failedSrc, setFailedSrc] = useState("");
   const imageUrl = blogImageUrl(src);
   if (!imageUrl || failedSrc === imageUrl)

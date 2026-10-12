@@ -1,4 +1,5 @@
 "use client";
+import type { RichEditorProps } from "@/type/type";
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -10,11 +11,7 @@ export default function RichEditor({
   content,
   onChange,
   disabled,
-}: {
-  content: string;
-  onChange: (content: string) => void;
-  disabled: boolean;
-}) {
+}: RichEditorProps) {
   const [insert, setInsert] = useState<"link" | "image" | null>(null);
   const [error, setError] = useState("");
   const editor = useEditor({

@@ -1,7 +1,14 @@
 "use client";
+import type { Category, Tag, TaxonomyKind, TaxonomySelection } from "@/type/type";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Category, Tag, errorMessage } from "@/lib/api";
+import {
+  errorMessage,
+  getCategories,
+  getTags,
+  saveTaxonomy,
+  deleteTaxonomy,
+} from "@/lib/api";
 import { useAuth } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
 export default function TaxonomyManager() {
@@ -13,16 +20,10 @@ export default function TaxonomyManager() {
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
-  const [editing, setEditing] = useState<{
-    item: Category;
-    kind: "categories" | "tags";
-  } | null>(null);
+  const [editing, setEditing] = useState<TaxonomySelection | null>(null);
   const [editError, setEditError] = useState("");
   const editDialog = useRef<HTMLDialogElement>(null);
-  const [deleting, setDeleting] = useState<{
-    item: Category;
-    kind: "categories" | "tags";
-  } | null>(null);
+  const [deleting, setDeleting] = useState<TaxonomySelection | null>(null);
   const visibleTags = tags.filter(
     (item) => user?.role === "admin" || item.createdById === user?.id,
   );
@@ -42,7 +43,7 @@ export default function TaxonomyManager() {
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    Promise.all([api<Category[]>("/categories"), api<Tag[]>("/tags")])
+    Promise.all([getCategories(api), getTags(api)])
       .then(([nextCategories, nextTags]) => {
         if (active) {
           setCategories(nextCategories);
@@ -61,7 +62,7 @@ export default function TaxonomyManager() {
   }, [api, revision]);
   async function save(
     event: React.FormEvent<HTMLFormElement>,
-    kind: "categories" | "tags",
+    kind: TaxonomyKind,
     id?: string,
   ) {
     event.preventDefault();
@@ -79,15 +80,17 @@ export default function TaxonomyManager() {
     setError("");
     setEditError("");
     try {
-      await api(`/${kind}${id ? `/${id}` : ""}`, {
-        method: id ? "PATCH" : "POST",
-        body: JSON.stringify({
+      await saveTaxonomy(
+        kind,
+        {
           name,
           ...(!id && kind === "tags"
-            ? { categoryId: values.get("categoryId") }
+            ? { categoryId: String(values.get("categoryId") || "") }
             : {}),
-        }),
-      });
+        },
+        api,
+        id,
+      );
       if (!id) form.reset();
       else setEditing(null);
       toast.success(
@@ -104,7 +107,7 @@ export default function TaxonomyManager() {
       setBusy(false);
     }
   }
-  function entry(item: Category, kind: "categories" | "tags") {
+  function entry(item: Category, kind: TaxonomyKind) {
     const editable = user?.role === "admin" || item.createdById === user?.id;
     const categoryTags = kind === "categories"
       ? visibleTags.filter((tag) => tag.categoryId === item.id) : [];
@@ -337,9 +340,7 @@ export default function TaxonomyManager() {
             setBusy(true);
             setError("");
             try {
-              await api(`/${deleting.kind}/${deleting.item.id}`, {
-                method: "DELETE",
-              });
+              await deleteTaxonomy(deleting.kind, deleting.item.id, api);
               toast.success("Deleted successfully.");
               setRevision((value) => value + 1);
             } catch (failure) {

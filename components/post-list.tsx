@@ -1,14 +1,12 @@
+import type { PostListProps } from "@/type/type";
 import Link from "next/link";
-import { BlogPage, Filters, dateLabel, queryString } from "@/lib/api";
+import { dateLabel, queryString } from "@/lib/api";
 import BlogImage from "./blog-image";
 
 export default function PostList({
   data,
   filters,
-}: {
-  data: BlogPage;
-  filters: Filters;
-}) {
+}: PostListProps) {
   return (
     <>
       <p className="result-count">

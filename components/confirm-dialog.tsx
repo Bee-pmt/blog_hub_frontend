@@ -1,4 +1,5 @@
 "use client";
+import type { ConfirmDialogProps } from "@/type/type";
 import { useEffect, useRef } from "react";
 export default function ConfirmDialog({
   title,
@@ -6,13 +7,7 @@ export default function ConfirmDialog({
   busy,
   onCancel,
   onConfirm,
-}: {
-  title: string;
-  message: string;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
+}: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;

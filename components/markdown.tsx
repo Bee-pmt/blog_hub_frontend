@@ -1,3 +1,4 @@
+import type { MarkdownProps } from "@/type/type";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import BlogImage from "./blog-image";
@@ -9,7 +10,7 @@ export function safeMarkdownUrl(url: string) {
   return "";
 }
 
-export default function Markdown({ content }: { content: string }) {
+export default function Markdown({ content }: MarkdownProps) {
   return (
     <div className="prose">
       <ReactMarkdown

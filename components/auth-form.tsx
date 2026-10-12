@@ -1,4 +1,5 @@
 "use client";
+import type { AuthFormProps } from "@/type/type";
 import { useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -6,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { errorMessage, localReturnPath } from "@/lib/api";
 import { submitAuthAction } from "@/action/action";
 import { useAuth } from "./auth-provider";
-export default function AuthForm({ mode }: { mode: "login" | "register" }) {
+export default function AuthForm({ mode }: AuthFormProps) {
   const { login, user, loading, error: sessionError, restore } = useAuth();
   const router = useRouter();
   const [error, setError] = useState("");

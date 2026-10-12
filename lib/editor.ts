@@ -1,4 +1,5 @@
-import { BlogInput, blogImageUrl } from "./api";
+import type { BlogInput } from "@/type/type";
+import { blogImageUrl } from "./api";
 
 // These constructs are readable in Preview but intentionally kept in source mode.
 export function needsSourceMode(markdown: string) {

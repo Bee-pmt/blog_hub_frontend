@@ -1,62 +1,18 @@
-export type User = {
-  id: string;
-  displayName: string;
-  email: string;
-  role: "author" | "admin";
-  createdAt: string;
-  updatedAt: string;
-};
-export type Category = {
-  id: string;
-  name: string;
-  slug: string;
-  createdById: string;
-  createdAt: string;
-  updatedAt: string;
-};
-export type Tag = Category & { categoryId: string };
-export type BlogSummary = {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt?: string;
-  author: { id: string; displayName: string };
-  categoryId: string | null;
-  category: Pick<Category, "id" | "name" | "slug"> | null;
-  categoryName: string;
-  tags: Pick<Tag, "id" | "name" | "slug" | "categoryId">[];
-  coverImageUrl: string | null;
-  status: "draft" | "published";
-  publishedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-export type Blog = BlogSummary & { content: string };
-export type BlogPage = {
-  items: (BlogSummary & { excerpt: string })[];
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-};
-export type BlogInput = {
-  title: string;
-  content: string;
-  categoryId?: string;
-  tagIds: string[];
-  coverImageUrl?: string | null;
-  status: Blog["status"];
-};
-export type TokenResponse = { accessToken: string; expiresIn: number };
-export type Filters = {
-  q?: string;
-  category?: string;
-  tag?: string;
-  author?: string;
-  page?: string;
-  status?: string;
-};
-
+import type {
+  User,
+  Category,
+  Tag,
+  Blog,
+  BlogPage,
+  BlogInput,
+  TokenResponse,
+  ApiRequest,
+  ApiResponseOptions,
+  ManagedBlogFilters,
+  TaxonomyInput,
+  RegistrationInput,
+  TaxonomyKind,
+} from "@/type/type";
 export const API_BASE = (
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5300/api/v1"
 ).replace(/\/$/, "");
@@ -71,9 +27,10 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(
+export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
+  responseOptions: ApiResponseOptions = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
@@ -93,6 +50,7 @@ export async function request<T>(
       0,
     );
   }
+  responseOptions.onResponse?.(response);
   if (response.status === 204) return undefined as T;
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -106,12 +64,122 @@ export async function request<T>(
       response.status,
     );
   }
-  if (data === null)
+  if (data === null && !responseOptions.allowEmpty)
     throw new ApiError(
       "The server returned an unreadable response.",
       response.status,
     );
   return data as T;
+}
+
+// Public reads use apiRequest; protected calls receive AuthProvider's api function.
+export function getBlogs(
+  filters: Record<string, string | number | undefined> = {},
+) {
+  return apiRequest<BlogPage>(`/blogs${queryString(filters)}`);
+}
+
+export function getBlog(slug: string) {
+  return apiRequest<Blog>(`/blogs/${encodeURIComponent(slug)}`);
+}
+
+export function getCategories(send: ApiRequest = apiRequest) {
+  return send<Category[]>("/categories");
+}
+
+export function getTags(send: ApiRequest = apiRequest) {
+  return send<Tag[]>("/tags");
+}
+
+export function getCurrentUser(send: ApiRequest) {
+  return send<User>("/auth/me");
+}
+
+export function getManagedBlogs(
+  admin: boolean,
+  filters: ManagedBlogFilters,
+  send: ApiRequest,
+) {
+  return send<BlogPage>(`${admin ? "/admin" : "/me"}/blogs${queryString(filters)}`);
+}
+
+export function getEditableBlog(id: string, admin: boolean, send: ApiRequest) {
+  return send<Blog>(`${admin ? "/admin" : "/me"}/blogs/${encodeURIComponent(id)}`);
+}
+
+export function saveBlog(
+  input: BlogInput,
+  id: string | undefined,
+  image: File | null,
+  send: ApiRequest,
+) {
+  let body: string | FormData = JSON.stringify(input);
+  if (image) {
+    const form = new FormData();
+    form.set("title", input.title);
+    form.set("content", input.content);
+    if (input.categoryId) form.set("categoryId", input.categoryId);
+    form.set("tagIds", JSON.stringify(input.tagIds));
+    form.set("status", input.status);
+    form.set("image", image);
+    body = form;
+  }
+  return send<Blog>(id ? `/blogs/${encodeURIComponent(id)}` : "/blogs", {
+    method: id ? "PATCH" : "POST",
+    body,
+  });
+}
+
+export function setBlogStatus(id: string, status: Blog["status"], send: ApiRequest) {
+  return send<Blog>(`/blogs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function deleteBlog(id: string, send: ApiRequest) {
+  return send<void>(`/blogs/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function saveTaxonomy(
+  kind: TaxonomyKind,
+  input: TaxonomyInput,
+  send: ApiRequest,
+  id?: string,
+) {
+  return send<Category | Tag>(`/${kind}${id ? `/${encodeURIComponent(id)}` : ""}`, {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteTaxonomy(
+  kind: TaxonomyKind,
+  id: string,
+  send: ApiRequest,
+) {
+  return send<void>(`/${kind}/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function registerUser(input: RegistrationInput) {
+  return apiRequest<User>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// The Server Action copies cookies using onResponse, including failed refreshes.
+export function requestAuthSession(
+  route: "login" | "refresh" | "logout",
+  headers: Headers,
+  body: object | undefined,
+  onResponse: (response: Response) => void,
+) {
+  return apiRequest<TokenResponse | null>(
+    `/auth/${route}`,
+    { method: "POST", headers, body: body ? JSON.stringify(body) : undefined },
+    { onResponse, allowEmpty: true },
+  );
 }
 
 export function queryString(

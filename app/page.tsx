@@ -1,14 +1,7 @@
+import type { Category, Tag, BlogPage, Filters } from "@/type/type";
 import { Suspense } from "react";
 import Link from "next/link";
-import {
-  BlogPage,
-  Category,
-  Tag,
-  Filters,
-  request,
-  queryString,
-  errorMessage,
-} from "@/lib/api";
+import { getBlogs, getCategories, getTags, queryString, errorMessage } from "@/lib/api";
 import SearchFilters from "@/components/search-filters";
 import PostList from "@/components/post-list";
 
@@ -28,9 +21,9 @@ async function Journal({ searchParams }: PageProps<"/">) {
   let result: [BlogPage, Category[], Tag[]];
   try {
     result = await Promise.all([
-      request<BlogPage>(`/blogs${queryString({ ...filters, limit: 9 })}`),
-      request<Category[]>("/categories"),
-      request<Tag[]>("/tags"),
+      getBlogs({ ...filters, limit: 9 }),
+      getCategories(),
+      getTags(),
     ]);
   } catch (error) {
     return (
@@ -46,6 +39,7 @@ async function Journal({ searchParams }: PageProps<"/">) {
       </div>
     );
   }
+  // const blogs  = apiRequest("/blogs")
   const [data, categories, tags] = result;
   return (
     <>

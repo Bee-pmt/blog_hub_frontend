@@ -1,19 +1,16 @@
 "use client";
+import type { SearchFiltersProps } from "@/type/type";
 
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Category, Tag, Filters, queryString } from "@/lib/api";
+import { queryString } from "@/lib/api";
 
 export default function SearchFilters({
   categories,
   tags,
   filters,
-}: {
-  categories: Category[];
-  tags: Tag[];
-  filters: Filters;
-}) {
+}: SearchFiltersProps) {
   const router = useRouter();
   const [category, setCategory] = useState(filters.category || "");
   const [tag, setTag] = useState(filters.tag || "");

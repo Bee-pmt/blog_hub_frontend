@@ -1,4 +1,5 @@
 "use client";
+import type { ChildrenProps } from "@/type/type";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -7,9 +8,7 @@ import { useAuth } from "./auth-provider";
 import { errorMessage } from "@/lib/api";
 export default function DashboardShell({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: ChildrenProps) {
   const { user, loading, error, restore, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");

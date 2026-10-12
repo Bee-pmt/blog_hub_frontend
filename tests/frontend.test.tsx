@@ -1,3 +1,4 @@
+import type { BlogInput } from "@/type/type";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Editor } from "@tiptap/core";
@@ -5,7 +6,14 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Markdown as MarkdownExtension } from "@tiptap/markdown";
 import Markdown, { safeMarkdownUrl } from "@/components/markdown";
-import { ApiError, blogImageUrl, localReturnPath, queryString, request } from "@/lib/api";
+import {
+  ApiError,
+  blogImageUrl,
+  localReturnPath,
+  queryString,
+  apiRequest,
+  saveBlog,
+} from "@/lib/api";
 import { needsSourceMode, validatePost } from "@/lib/editor";
 
 const cookieStore = vi.hoisted(() => ({
@@ -27,11 +35,36 @@ describe("API contract", () => {
   it("leaves multipart Content-Type to the browser", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetcher);
-    const form = new FormData();
-    form.set("title", "A story");
-    await request("/blogs", { method: "POST", body: form });
-    expect(new Headers(fetcher.mock.calls[0][1].headers).has("Content-Type")).toBe(false);
-    expect(fetcher.mock.calls[0][1].body).toBe(form);
+    const input: BlogInput = {
+      title: "A story", content: "Body", tagIds: ["tag-1"], status: "draft",
+      categoryId: "category-1", coverImageUrl: null,
+    };
+    const image = new File(["image bytes"], "cover.png", { type: "image/png" });
+    await saveBlog(input, undefined, image, apiRequest);
+    const options = fetcher.mock.calls[0][1];
+    expect(new Headers(options.headers).has("Content-Type")).toBe(false);
+    const form = options.body as FormData;
+    expect(form.get("image")).toBe(image);
+    expect(form.get("tagIds")).toBe('["tag-1"]');
+    expect(form.get("categoryId")).toBe("category-1");
+    expect(form.has("coverImageUrl")).toBe(false);
+  });
+  it("preserves explicit image removal through the authenticated sender", async () => {
+    const saved = { id: "story-1", coverImageUrl: null };
+    const send = vi.fn().mockResolvedValue(saved);
+    const input: BlogInput = {
+      title: "A story", content: "Body", tagIds: [], status: "draft", coverImageUrl: null,
+    };
+    expect(await saveBlog(input, "story-1", null, send)).toBe(saved);
+    expect(send).toHaveBeenCalledWith("/blogs/story-1", {
+      method: "PATCH", body: JSON.stringify(input),
+    });
+  });
+  it("rejects unreadable successful responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid JSON")));
+    await expect(apiRequest("/blogs")).rejects.toMatchObject({
+      status: 200, message: "The server returned an unreadable response.",
+    });
   });
   it("resolves uploaded image paths against the backend origin", () => {
     const path = "/images/12345678-1234-1234-1234-123456789abc.png";
@@ -59,7 +92,7 @@ describe("API contract", () => {
       vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
     );
     await expect(
-      request("/blogs/id", { method: "DELETE" }),
+      apiRequest("/blogs/id", { method: "DELETE" }),
     ).resolves.toBeUndefined();
   });
   it("shows backend validation arrays", async () => {
@@ -74,7 +107,7 @@ describe("API contract", () => {
           ),
         ),
     );
-    await expect(request("/blogs")).rejects.toMatchObject({
+    await expect(apiRequest("/blogs")).rejects.toMatchObject({
       status: 400,
       message: "Title required · Category required",
     });
@@ -84,8 +117,8 @@ describe("API contract", () => {
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
     );
-    await expect(request("/blogs")).rejects.toBeInstanceOf(ApiError);
-    await expect(request("/blogs")).rejects.toMatchObject({ status: 0 });
+    await expect(apiRequest("/blogs")).rejects.toBeInstanceOf(ApiError);
+    await expect(apiRequest("/blogs")).rejects.toMatchObject({ status: 0 });
   });
   it("rejects external or malformed return destinations", () => {
     for (const path of [
@@ -140,6 +173,12 @@ describe("authentication Server Actions", () => {
     form.set("password", "incorrect");
     expect(await submitAuthAction("login", form)).toMatchObject({ error: "Invalid credentials", status: 401, data: null });
     expect(cookieStore.delete).not.toHaveBeenCalled();
+  });
+  it("clears the frontend refresh cookie after a bodyless logout", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    const { logoutAction } = await import("@/action/action");
+    expect(await logoutAction()).toEqual({ error: "", status: 200 });
+    expect(cookieStore.delete).toHaveBeenCalledWith("bloghub_refresh");
   });
   it("forwards the refresh cookie and Origin, and clears an expired session", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "Expired" }, { status: 401 }));
