@@ -1,7 +1,8 @@
 // Isolated contract fixture. It never connects to the real backend or database.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-let categories, tags, blogs, users, sessions, access, failSave, images;
+let requestLog = [], failRequest = null;
+let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
   users = [
@@ -30,6 +31,10 @@ function reset() {
       updatedAt: now,
     },
   ];
+  users.push(...Array.from({ length: 12 }, (_, index) => ({
+    id: `member-${index}`, displayName: `Member ${index + 1}`, email: `member${index + 1}@test.local`, role: "author", createdAt: now, updatedAt: now,
+  })));
+  for (const account of users) account.status = "active";
   categories = [
     {
       id: "cat-1",
@@ -79,6 +84,7 @@ function reset() {
     tagIds: ["tag-1"],
     coverImageUrl: null,
     status: "published",
+    publicationBlocked: false,
     publishedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -102,6 +108,8 @@ function reset() {
     tagIds: [],
     publishedAt: null,
   });
+  passwords = new Map();
+  resetCodes = new Map();
   sessions = new Map();
   access = new Map();
   failSave = false;
@@ -167,7 +175,20 @@ createServer(async (req, res) => {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(status === 204 ? undefined : JSON.stringify(value));
   };
+  if (path === "/__requests") return send(requestLog);
+  if (path === "/__fail-request") {
+    failRequest = data;
+    return send({ ok: true });
+  }
+  if (!path.startsWith("/__")) requestLog.push({ path: url.pathname + url.search, method: req.method, contentType: req.headers["content-type"] });
+  if (failRequest?.path === path && failRequest.method === req.method) {
+    const failure = failRequest;
+    failRequest = null;
+    return send({ message: failure.message }, failure.status);
+  }
   if (path === "/__reset") {
+    requestLog = [];
+    failRequest = null;
     reset();
     return send({ ok: true });
   }
@@ -192,6 +213,19 @@ createServer(async (req, res) => {
     });
     return send({ message: "Registered" }, 201);
   }
+  if (path === "/auth/forgot-password") {
+    if (users.some((user) => user.email === data.email)) resetCodes.set(data.email, "012345");
+    return send({ message: "If this email is registered, a password reset code has been sent." });
+  }
+  if (path === "/auth/reset-password") {
+    if (!resetCodes.has(data.email) || resetCodes.get(data.email) !== data.code)
+      return send({ message: "Invalid or expired reset code" }, 400);
+    passwords.set(data.email, data.newPassword);
+    resetCodes.delete(data.email);
+    for (const [key, value] of sessions) if (value.email === data.email) sessions.delete(key);
+    for (const [key, value] of access) if (value.email === data.email) access.delete(key);
+    return send({ message: "Password reset successfully. Please log in again." });
+  }
   const cookie = /bloghub_refresh=([^;]+)/.exec(req.headers.cookie || "")?.[1];
   if (path === "/auth/logout") {
     sessions.delete(cookie);
@@ -205,7 +239,7 @@ createServer(async (req, res) => {
     const user = path.endsWith("login")
       ? users.find((user) => user.email === data.email)
       : sessions.get(cookie);
-    if (!user) return send({ message: "Sign in required" }, 401);
+    if (!user || user.status === "disabled" || (path.endsWith("login") && data.password !== (passwords.get(user.email) || "password123"))) return send({ message: "Sign in required" }, 401);
     sessions.delete(cookie);
     const refresh = randomUUID();
     const token = randomUUID();
@@ -222,6 +256,15 @@ createServer(async (req, res) => {
   );
   if (path === "/auth/me")
     return user ? send(user) : send({ message: "Sign in required" }, 401);
+  if (path === "/auth/change-password") {
+    if (!user) return send({ message: "Sign in required" }, 401);
+    if (data.currentPassword !== (passwords.get(user.email) || "password123"))
+      return send({ message: "Current password is incorrect" }, 401);
+    passwords.set(user.email, data.newPassword);
+    for (const [key, value] of sessions) if (value.id === user.id) sessions.delete(key);
+    for (const [key, value] of access) if (value.id === user.id) access.delete(key);
+    return send({ message: "Password changed successfully. Please log in again." });
+  }
   const protectedPath =
     path.startsWith("/me/") ||
     path.startsWith("/admin/") ||
@@ -229,6 +272,40 @@ createServer(async (req, res) => {
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  const adminStatus = /^\/admin\/blogs\/([^/]+)\/status$/.exec(path);
+  if (adminStatus && req.method === "PATCH") {
+    const blog = blogs.find((item) => item.id === adminStatus[1]);
+    if (!blog) return send({ message: "Story not found" }, 404);
+    if (!["draft", "published"].includes(data.status) || Object.keys(data).some((key) => key !== "status"))
+      return send({ message: "Invalid status update" }, 400);
+    blog.status = data.status;
+    blog.publicationBlocked = data.status === "draft";
+    if (data.status === "published" && !blog.publishedAt) blog.publishedAt = now;
+    blog.updatedAt = new Date().toISOString();
+    return send(serialize(blog, true));
+  }
+  if (path === "/admin/users" && req.method === "GET") {
+    const q = (url.searchParams.get("q") || "").toLowerCase();
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 10);
+    const filtered = users.filter((account) => `${account.displayName} ${account.email}`.toLowerCase().includes(q));
+    return send({ items: filtered.slice((page - 1) * limit, page * limit), page, limit, total: filtered.length, totalPages: Math.ceil(filtered.length / limit) });
+  }
+  const userUpdate = /^\/admin\/users\/([^/]+)\/(role|status)$/.exec(path);
+  if (userUpdate && req.method === "PATCH") {
+    const target = users.find((account) => account.id === userUpdate[1]);
+    if (!target) return send({ message: "User not found" }, 404);
+    if (target.id === user.id && data.status === "disabled") return send({ message: "You cannot deactivate your own account" }, 403);
+    if (target.role === "admin" && target.status === "active" && (data.role === "author" || data.status === "disabled") && users.filter((account) => account.role === "admin" && account.status === "active").length <= 1)
+      return send({ message: "The last active admin must remain active and keep the admin role" }, 409);
+    if (data.role) target.role = data.role;
+    if (data.status) target.status = data.status;
+    if (target.status === "disabled") {
+      for (const [key, account] of sessions) if (account.id === target.id) sessions.delete(key);
+      for (const [key, account] of access) if (account.id === target.id) access.delete(key);
+    }
+    return send(target);
+  }
   if (image) {
     if (data.coverImageUrl !== undefined) return send({ message: "Send either image or coverImageUrl, not both" }, 400);
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.type)) return send({ message: "Image must be JPEG, PNG, or WebP" }, 400);
@@ -376,6 +453,9 @@ createServer(async (req, res) => {
       return send(undefined, 204);
     }
     if (req.method === "PATCH") {
+      if (blog.author.id !== user.id) return send({ message: "Forbidden" }, 403);
+      if (blog.publicationBlocked && data.status === "published")
+        return send({ message: "Only an admin can publish this story again" }, 403);
       if (failSave) {
         failSave = false;
         return send({ message: "Temporary save failure" }, 503);

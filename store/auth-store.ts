@@ -10,7 +10,11 @@ import {
   sessionLock,
   setSession,
 } from "@/lib/session";
-import { logoutAction, submitAuthAction } from "@/action/action";
+import {
+  clearSessionAction,
+  logoutAction,
+  submitAuthAction,
+} from "@/action/action";
 
 // Each provider creates its own store; session restoration starts after mounting.
 export function createAuthStore() {
@@ -58,23 +62,45 @@ export function createAuthStore() {
         const result = await logoutAction();
         if (result.error) throw new ApiError(result.error, result.status);
       });
-      ++restoreId;
-      const userId = get().user?.id;
-      clearSession();
-      set({ user: null, loading: false, error: "" });
-      try {
-        for (const key of Object.keys(localStorage))
-          if (key.startsWith(`bloghub-recovery:${userId}:`))
-            localStorage.removeItem(key);
-      } catch {
-        /* Storage can be unavailable. */
-      }
-      channel?.postMessage("logout");
+      await get().endSession();
     },
 
-    async api<T>(path: string, options?: RequestInit): Promise<T> {
+    async changePassword(currentPassword, newPassword) {
+      // Refresh can acquire its own session lock before sending this request.
+      // An incorrect current password is also HTTP 401; keep the session intact.
+      await authenticatedRequest(
+        "/auth/change-password",
+        "POST",
+        {
+          body: JSON.stringify({ currentPassword, newPassword }),
+        },
+        false,
+      );
+      await get().endSession();
+    },
+
+    async endSession() {
       try {
-        return await authenticatedRequest<T>(path, options);
+        await clearSessionAction();
+      } finally {
+        ++restoreId;
+        const userId = get().user?.id;
+        clearSession();
+        set({ user: null, loading: false, error: "" });
+        try {
+          for (const key of Object.keys(localStorage))
+            if (key.startsWith(`bloghub-recovery:${userId}:`))
+              localStorage.removeItem(key);
+        } catch {
+          /* Storage can be unavailable. */
+        }
+        channel?.postMessage("logout");
+      }
+    },
+
+    async api<T>(path: string, method = "GET", options?: RequestInit): Promise<T> {
+      try {
+        return await authenticatedRequest<T>(path, method, options);
       } catch (failure) {
         if (failure instanceof ApiError && failure.status === 401) {
           clearSession();

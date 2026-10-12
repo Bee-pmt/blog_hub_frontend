@@ -13,8 +13,11 @@ import {
   queryString,
   apiRequest,
   saveBlog,
+  setBlogStatus,
 } from "@/lib/api";
 import { needsSourceMode, validatePost } from "@/lib/editor";
+
+vi.mock("next/cache", () => ({ cacheLife: vi.fn(), cacheTag: vi.fn(), updateTag: vi.fn() }));
 
 const cookieStore = vi.hoisted(() => ({
   get: vi.fn(() => ({ value: "refresh-cookie" })),
@@ -32,6 +35,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("API contract", () => {
+  it("routes admin moderation separately from owner publication", async () => {
+    const send = vi.fn().mockResolvedValue({ status: "draft" });
+    await setBlogStatus("story-1", "draft", send, true);
+    expect(send).toHaveBeenLastCalledWith("/admin/blogs/story-1/status", "PATCH", {
+      body: JSON.stringify({ status: "draft" }),
+    });
+    await setBlogStatus("story-1", "published", send);
+    expect(send).toHaveBeenLastCalledWith("/blogs/story-1", "PATCH", {
+      body: JSON.stringify({ status: "published" }),
+    });
+  });
   it("leaves multipart Content-Type to the browser", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetcher);
@@ -56,8 +70,8 @@ describe("API contract", () => {
       title: "A story", content: "Body", tagIds: [], status: "draft", coverImageUrl: null,
     };
     expect(await saveBlog(input, "story-1", null, send)).toBe(saved);
-    expect(send).toHaveBeenCalledWith("/blogs/story-1", {
-      method: "PATCH", body: JSON.stringify(input),
+    expect(send).toHaveBeenCalledWith("/blogs/story-1", "PATCH", {
+      body: JSON.stringify(input),
     });
   });
   it("rejects unreadable successful responses", async () => {
@@ -92,7 +106,7 @@ describe("API contract", () => {
       vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
     );
     await expect(
-      apiRequest("/blogs/id", { method: "DELETE" }),
+      apiRequest("/blogs/id", "DELETE"),
     ).resolves.toBeUndefined();
   });
   it("shows backend validation arrays", async () => {
@@ -244,7 +258,7 @@ describe("session rotation", () => {
     const session = await import("@/lib/session");
     session.setSession({ accessToken: "valid", expiresIn: 3600 });
     await expect(
-      session.authenticatedRequest("/blogs", { method: "POST", body: "{}" }),
+      session.authenticatedRequest("/blogs", "POST", { body: "{}" }),
     ).rejects.toMatchObject({ status: 0 });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -349,5 +363,59 @@ describe("safe articles and writing", () => {
         true,
       ),
     ).toContain("HTTP");
+  });
+});
+
+
+describe("Password recovery actions", () => {
+  it("requests a code using a normalized email without exposing account details", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "If this email is registered, a password reset code has been sent." }));
+    vi.stubGlobal("fetch", fetcher);
+    const { passwordRecoveryAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", " WRITER@EXAMPLE.COM ");
+    const result = await passwordRecoveryAction("forgot", form);
+    expect(result.error).toBe("");
+    expect(fetcher.mock.calls[0][0]).toContain("/auth/forgot-password");
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ email: "writer@example.com" });
+  });
+
+  it("preserves leading zeroes in codes and clears the frontend cookie after reset", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "Password reset successfully." }));
+    vi.stubGlobal("fetch", fetcher);
+    const { passwordRecoveryAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", "writer@example.com");
+    form.set("code", "012345");
+    form.set("newPassword", "newpassword123");
+    form.set("confirmPassword", "newpassword123");
+    expect((await passwordRecoveryAction("reset", form)).error).toBe("");
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ email: "writer@example.com", code: "012345", newPassword: "newpassword123" });
+    expect(cookieStore.delete).toHaveBeenCalledWith("bloghub_refresh");
+  });
+
+  it("rejects mismatched passwords and excessive UTF-8 length before calling the backend", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const { passwordRecoveryAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", "writer@example.com");
+    form.set("code", "123456");
+    form.set("newPassword", "newpassword123");
+    form.set("confirmPassword", "different123");
+    expect((await passwordRecoveryAction("reset", form)).error).toBe("Passwords do not match.");
+    form.set("newPassword", "က".repeat(25));
+    form.set("confirmPassword", "က".repeat(25));
+    expect((await passwordRecoveryAction("reset", form)).error).toContain("72 UTF-8 bytes");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("surfaces SMTP configuration errors without advancing the flow", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ message: "Password reset email is not configured" }, { status: 503 })));
+    const { passwordRecoveryAction } = await import("@/action/action");
+    const form = new FormData();
+    form.set("email", "writer@example.com");
+    expect(await passwordRecoveryAction("forgot", form)).toMatchObject({ message: "", error: "Password reset email is not configured" });
+    expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 });

@@ -6,9 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-provider";
 import { errorMessage } from "@/lib/api";
-export default function DashboardShell({
-  children,
-}: ChildrenProps) {
+export default function DashboardShell({ children }: ChildrenProps) {
   const { user, loading, error, restore, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
@@ -70,7 +68,28 @@ export default function DashboardShell({
     <main id="main-content" className="site-container dashboard-layout">
       <aside className="dashboard-sidebar">
         <p className="eyebrow">Your workspace</p>
-        <h2>{user.displayName}</h2>
+        <div className="sidebar-account-heading">
+          <h2>{user.displayName}</h2>
+          <Link
+            className="sidebar-settings-button"
+            href="/settings"
+            aria-label="Account settings"
+            title="Change password"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              aria-hidden="true"
+            >
+              <path d="m9 3-.6 2.4-2.1 1.2-2.4-.6-2 3.5 1.8 1.7v2.4L1.9 15l2 3.5 2.4-.6 2.1 1.2L9 21h4l.6-2.4 2.1-1.2 2.4.6 2-3.5-1.8-1.7v-2.4L20.1 9l-2-3.5-2.4.6-2.1-1.2L13 3Z" />
+              <circle cx="11" cy="12" r="3" />
+            </svg>
+          </Link>
+        </div>
         <nav aria-label="Workspace navigation">
           <Link
             aria-current={pathname === "/dashboard" ? "page" : undefined}
@@ -95,12 +114,26 @@ export default function DashboardShell({
             Categories & tags
           </Link>
           {user.role === "admin" && (
-            <Link
-              aria-current={admin ? "page" : undefined}
-              href="/dashboard/admin/posts"
-            >
-              All stories · Admin
-            </Link>
+            <>
+              <Link
+                aria-current={
+                  pathname.startsWith("/dashboard/admin/posts")
+                    ? "page"
+                    : undefined
+                }
+                href="/dashboard/admin/posts"
+              >
+                All stories · Admin
+              </Link>
+              <Link
+                href="/dashboard/admin/users"
+                aria-current={
+                  pathname === "/dashboard/admin/users" ? "page" : undefined
+                }
+              >
+                Users · Admin
+              </Link>
+            </>
           )}
         </nav>
         <div className="account-details">
@@ -128,7 +161,11 @@ export default function DashboardShell({
           >
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
-          {logoutError && <p className="notice" role="alert">{logoutError}</p>}
+          {logoutError && (
+            <p className="notice" role="alert">
+              {logoutError}
+            </p>
+          )}
         </div>
       </aside>
       <div className="dashboard-content">{children}</div>

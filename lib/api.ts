@@ -1,5 +1,7 @@
 import type {
   User,
+  ManagedUser,
+  UserPage,
   Category,
   Tag,
   Blog,
@@ -28,17 +30,20 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(
-  path: string,
+  route: string,
+  method = "GET",
   options: RequestInit = {},
   responseOptions: ApiResponseOptions = {},
 ): Promise<T> {
+  // Set JSON headers for text bodies; file uploads supply their own headers.
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${API_BASE}${route}`, {
       ...options,
+      method,
       headers,
       cache: "no-store",
       signal: options.signal ?? AbortSignal.timeout(15000),
@@ -50,6 +55,7 @@ export async function apiRequest<T>(
       0,
     );
   }
+  // Authentication actions use this callback to copy the refresh cookie.
   responseOptions.onResponse?.(response);
   if (response.status === 204) return undefined as T;
   const data = await response.json().catch(() => null);
@@ -100,11 +106,15 @@ export function getManagedBlogs(
   filters: ManagedBlogFilters,
   send: ApiRequest,
 ) {
-  return send<BlogPage>(`${admin ? "/admin" : "/me"}/blogs${queryString(filters)}`);
+  return send<BlogPage>(
+    `${admin ? "/admin" : "/me"}/blogs${queryString(filters)}`,
+  );
 }
 
 export function getEditableBlog(id: string, admin: boolean, send: ApiRequest) {
-  return send<Blog>(`${admin ? "/admin" : "/me"}/blogs/${encodeURIComponent(id)}`);
+  return send<Blog>(
+    `${admin ? "/admin" : "/me"}/blogs/${encodeURIComponent(id)}`,
+  );
 }
 
 export function saveBlog(
@@ -124,21 +134,30 @@ export function saveBlog(
     form.set("image", image);
     body = form;
   }
-  return send<Blog>(id ? `/blogs/${encodeURIComponent(id)}` : "/blogs", {
-    method: id ? "PATCH" : "POST",
-    body,
-  });
+  return send<Blog>(
+    id ? `/blogs/${encodeURIComponent(id)}` : "/blogs",
+    id ? "PATCH" : "POST",
+    { body },
+  );
 }
 
-export function setBlogStatus(id: string, status: Blog["status"], send: ApiRequest) {
-  return send<Blog>(`/blogs/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ status }),
-  });
+export function setBlogStatus(
+  id: string,
+  status: Blog["status"],
+  send: ApiRequest,
+  admin = false,
+) {
+  return send<Blog>(
+    admin
+      ? `/admin/blogs/${encodeURIComponent(id)}/status`
+      : `/blogs/${encodeURIComponent(id)}`,
+    "PATCH",
+    { body: JSON.stringify({ status }) },
+  );
 }
 
 export function deleteBlog(id: string, send: ApiRequest) {
-  return send<void>(`/blogs/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return send<void>(`/blogs/${encodeURIComponent(id)}`, "DELETE");
 }
 
 export function saveTaxonomy(
@@ -147,10 +166,11 @@ export function saveTaxonomy(
   send: ApiRequest,
   id?: string,
 ) {
-  return send<Category | Tag>(`/${kind}${id ? `/${encodeURIComponent(id)}` : ""}`, {
-    method: id ? "PATCH" : "POST",
-    body: JSON.stringify(input),
-  });
+  return send<Category | Tag>(
+    `/${kind}${id ? `/${encodeURIComponent(id)}` : ""}`,
+    id ? "PATCH" : "POST",
+    { body: JSON.stringify(input) },
+  );
 }
 
 export function deleteTaxonomy(
@@ -158,12 +178,11 @@ export function deleteTaxonomy(
   id: string,
   send: ApiRequest,
 ) {
-  return send<void>(`/${kind}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return send<void>(`/${kind}/${encodeURIComponent(id)}`, "DELETE");
 }
 
 export function registerUser(input: RegistrationInput) {
-  return apiRequest<User>("/auth/register", {
-    method: "POST",
+  return apiRequest<User>("/auth/register", "POST", {
     body: JSON.stringify(input),
   });
 }
@@ -177,7 +196,8 @@ export function requestAuthSession(
 ) {
   return apiRequest<TokenResponse | null>(
     `/auth/${route}`,
-    { method: "POST", headers, body: body ? JSON.stringify(body) : undefined },
+    "POST",
+    { headers, body: body ? JSON.stringify(body) : undefined },
     { onResponse, allowEmpty: true },
   );
 }
@@ -233,4 +253,20 @@ export function errorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
     : "Something went wrong. Please try again.";
+}
+
+export function getManagedUsers(q: string, page: number, send: ApiRequest) {
+  return send<UserPage>(`/admin/users${queryString({ q, page, limit: 10 })}`);
+}
+
+export function updateManagedUser(
+  id: string,
+  change: { role: User["role"] } | { status: ManagedUser["status"] },
+  send: ApiRequest,
+) {
+  return send<ManagedUser>(
+    `/admin/users/${encodeURIComponent(id)}/${"role" in change ? "role" : "status"}`,
+    "PATCH",
+    { body: JSON.stringify(change) },
+  );
 }

@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
     agentFeedback: true,
+    // Covers allow 5 MB files plus the story and multipart overhead.
+    serverActions: { bodySizeLimit: "6mb" },
   },
   cacheComponents: true,
   partialPrefetching: true,

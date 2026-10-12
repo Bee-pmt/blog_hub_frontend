@@ -62,6 +62,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
           post.id,
           post.status === "draft" ? "published" : "draft",
           api,
+          admin,
         );
       }
   // const blogs  = apiRequest("/blogs")
@@ -153,6 +154,9 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                         {dateLabel(post.updatedAt)}
                         {admin && ` · ${post.author.displayName}`}
                       </p>
+                      {post.publicationBlocked && (
+                        <p className="field-help">Unpublished by an admin. Only an admin can publish this story again.</p>
+                      )}
                     </div>
                     <div className="row-actions">
                       {!admin && <Link
@@ -171,7 +175,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                       )}
                       <button
                         className="text-link"
-                        disabled={!!busy}
+                        disabled={!!busy || (!admin && !!post.publicationBlocked)}
                         onClick={() => void mutate(post, false)}
                       >
                         {busy === post.id

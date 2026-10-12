@@ -9,6 +9,15 @@ export type User = {
   createdAt: string;
   updatedAt: string;
 };
+export type ManagedUser = User & { status: "active" | "disabled" };
+export type UserPage = {
+  items: ManagedUser[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
 export type Category = {
   id: string;
   name: string;
@@ -30,6 +39,7 @@ export type BlogSummary = {
   tags: Pick<Tag, "id" | "name" | "slug" | "categoryId">[];
   coverImageUrl: string | null;
   status: "draft" | "published";
+  publicationBlocked?: boolean;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -60,7 +70,7 @@ export type Filters = {
   status?: string;
 };
 
-export type ApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
+export type ApiRequest = <T>(route: string, method?: string, options?: RequestInit) => Promise<T>;
 
 export type Auth = {
   user: User | null;
@@ -69,6 +79,11 @@ export type Auth = {
   restore: () => Promise<void>;
   login: (form: FormData) => Promise<void>;
   logout: () => Promise<void>;
+  endSession: () => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   api: ApiRequest;
   initialize: () => () => void;
 };
@@ -94,6 +109,8 @@ export type ChildrenProps = {
 };
 
 export type ConfirmDialogProps = {
+  confirmLabel?: string;
+  busyLabel?: string;
   title: string;
   message: string;
   busy: boolean;
@@ -140,7 +157,11 @@ export type ApiResponseOptions = {
   allowEmpty?: boolean;
 };
 
-export type ManagedBlogFilters = { status?: string; page?: number; limit?: number };
+export type ManagedBlogFilters = {
+  status?: string;
+  page?: number;
+  limit?: number;
+};
 export type TaxonomyInput = { name: string; categoryId?: string };
 export type RegistrationInput = {
   displayName: string;

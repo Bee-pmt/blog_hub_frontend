@@ -3,6 +3,8 @@ import type { ConfirmDialogProps } from "@/type/type";
 import { useEffect, useRef } from "react";
 export default function ConfirmDialog({
   title,
+  confirmLabel = "Delete permanently",
+  busyLabel = "Deleting…",
   message,
   busy,
   onCancel,
@@ -41,7 +43,7 @@ export default function ConfirmDialog({
           disabled={busy}
           onClick={onConfirm}
         >
-          {busy ? "Deleting…" : "Delete permanently"}
+          {busy ? busyLabel : confirmLabel}
         </button>
       </div>
     </dialog>

@@ -2,7 +2,13 @@
 import type { TokenResponse } from "@/type/type";
 
 import { cookies, headers } from "next/headers";
-import { ApiError, errorMessage, registerUser, requestAuthSession } from "@/lib/api";
+import {
+  ApiError,
+  apiRequest,
+  errorMessage,
+  registerUser,
+  requestAuthSession,
+} from "@/lib/api";
 
 const refreshCookie = "bloghub_refresh";
 
@@ -22,19 +28,24 @@ async function authRequest(
   if (body) requestHeaders.set("Content-Type", "application/json");
 
   let backendCookie: string | undefined;
-  const data = await requestAuthSession(path, requestHeaders, body, (response) => {
-    if (
-      (response.status === 401 && path === "refresh") ||
-      (response.ok && path === "logout")
-    ) {
-      cookieStore.delete(refreshCookie);
-    }
-    if (response.ok && path !== "logout") {
-      backendCookie = response.headers
-        .getSetCookie()
-        .find((cookie) => cookie.startsWith(`${refreshCookie}=`));
-    }
-  });
+  const data = await requestAuthSession(
+    path,
+    requestHeaders,
+    body,
+    (response) => {
+      if (
+        (response.status === 401 && path === "refresh") ||
+        (response.ok && path === "logout")
+      ) {
+        cookieStore.delete(refreshCookie);
+      }
+      if (response.ok && path !== "logout") {
+        backendCookie = response.headers
+          .getSetCookie()
+          .find((cookie) => cookie.startsWith(`${refreshCookie}=`));
+      }
+    },
+  );
   if (path === "logout") return null;
   const value = backendCookie?.split(";")[0].slice(refreshCookie.length + 1);
   if (
@@ -125,5 +136,57 @@ export async function logoutAction() {
       error: errorMessage(failure),
       status: failure instanceof ApiError ? failure.status : 500,
     };
+  }
+}
+
+// The frontend refresh cookie is separate from the backend cookie.
+export async function clearSessionAction() {
+  (await cookies()).delete(refreshCookie);
+}
+
+export async function passwordRecoveryAction(
+  mode: "forgot" | "reset",
+  form: FormData,
+) {
+  try {
+    if (mode !== "forgot" && mode !== "reset")
+      throw new ApiError("Invalid form.", 400);
+    const email = String(form.get("email") || "")
+      .trim()
+      .toLowerCase();
+    if (!email || email.length > 254)
+      throw new ApiError("Enter your email address.", 400);
+    const body: { email: string; code?: string; newPassword?: string } = {
+      email,
+    };
+    if (mode === "reset") {
+      const newPassword = String(form.get("newPassword") || "");
+      const code = String(form.get("code") || "").trim();
+      if (!/^\d{6}$/.test(code))
+        throw new ApiError("Enter the six-digit code from your email.", 400);
+      if (
+        [...newPassword].length < 8 ||
+        new TextEncoder().encode(newPassword).length > 72
+      )
+        throw new ApiError(
+          "Use at least 8 characters and no more than 72 UTF-8 bytes.",
+          400,
+        );
+      if (newPassword !== form.get("confirmPassword"))
+        throw new ApiError("Passwords do not match.", 400);
+      body.code = code;
+      body.newPassword = newPassword;
+    }
+    const data = await apiRequest<{ message: string }>(
+      `/auth/${mode === "forgot" ? "forgot-password" : "reset-password"}`,
+      "POST",
+      {
+        body: JSON.stringify(body),
+      },
+    );
+    if (mode === "reset") await clearSessionAction();
+    return { message: data.message, error: "" };
+  } catch (failure) {
+    return { message: "", error: errorMessage(failure) };
   }
 }

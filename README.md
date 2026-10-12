@@ -56,10 +56,41 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run test:e2e
 - Browser recovery is local to an account and post, updated after one second and before saving or closing the page. Restore/Discard offers a recovery decision; successful saving and explicit logout clear copies. Recovery is not a server autosave and can be unavailable when browser storage is blocked. Write on a trusted browser and save explicitly.
 - Unsaved changes warn on in-app links, sign-out, reload/close, and history navigation in browsers supporting the Navigation API. Older browsers still offer recovery and close/reload warnings.
 - Authors can rename only taxonomy they created. Admins can moderate any post and delete taxonomy; deleting a category removes its tags and preserves affected stories as Uncategorized.
-- Comments, likes, password reset, profile editing, user administration, and deployment are not included.
+- All stories uses the admin status endpoint to publish or unpublish any story. Admin unpublishing blocks owner publication until an admin publishes it again. Owners can continue editing and saving the draft; their publication controls show the restriction.
+- Comments, likes, profile editing, and deployment are not included.
 
 ## Live integration review
 
 The real backend was offline during implementation. After starting it, use disposable accounts/content to check registration, login/reload/refresh/logout, taxonomy creation, draft saving/recovery, publication/unpublication, stable slugs, and ownership. With an existing admin, verify moderation and category deletion consequences. Clean up only the disposable content you created.
 
 The dependency audit reports five high advisories in the existing Next.js ESLint toolchain (`braces` and its parent packages). These are development dependencies; no automatic force downgrade was applied. Recheck upstream fixes before a release.
+
+## Password management
+
+After signing in, the settings icon beside the account name in the workspace sidebar opens `/settings` to change the password. The form checks confirmation and password length, then uses the backend's `/auth/change-password` endpoint. Successful changes clear the frontend session and return to sign-in; other tabs sign out too.
+
+The sign-in page links to `/forgot-password`. Enter the registered email, then its six-digit verification code and a new password. Codes expire after 15 minutes; resending has a 60-second cooldown. Recovery uses the existing `/auth/forgot-password` and `/auth/reset-password` endpoints. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` in the backend's local `.env` and restart the backend to send real mail. See the backend's `docs/FORGOT_PASSWORD.md` for details. Browser tests use mocked email codes and never send real mail.
+
+## Admin user management
+
+Admins can open **Users · Admin** in the workspace sidebar (`/dashboard/admin/users`). Search by name or email; results show account name/email, registration date, role, and status, with 10 users per page and Previous/Next controls. Role and account-access changes require confirmation. Deactivation preserves stories and revokes sessions; reactivation requires a fresh login. The backend prevents self-deactivation and removing the last active admin, including concurrent requests. User creation and deletion are not included. Restart the backend to load the new role endpoint.
+
+## Content caching
+
+Zustand continues to manage authentication. Public story lists and articles use exported functions in `lib/content.ts`; categories and tags share a cached taxonomy function, also available to workspace components through `getTaxonomyAction`. Next.js caches results by function arguments, so filters and pagination remain independent.
+
+Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `action/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts, account information, and admin lists remain uncached. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
+
+### Simple API usage
+
+`lib/api.ts` uses `apiRequest(route, method, options)`. The method defaults to `GET`; options are only needed for a body or headers:
+
+```ts
+const categories = await apiRequest<Category[]>("/categories");
+await apiRequest("/blogs/story-id", "DELETE");
+await apiRequest("/auth/register", "POST", {
+  body: JSON.stringify({ displayName, email, password }),
+});
+```
+
+Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content.ts` to reuse Next.js cached results. Protected functions receive the Zustand authenticated `api` sender, which uses the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.

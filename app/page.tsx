@@ -1,7 +1,8 @@
 import type { Category, Tag, BlogPage, Filters } from "@/type/type";
 import { Suspense } from "react";
 import Link from "next/link";
-import { getBlogs, getCategories, getTags, queryString, errorMessage } from "@/lib/api";
+import { queryString, errorMessage } from "@/lib/api";
+import { getCachedBlogs, getCachedTaxonomy } from "@/lib/content";
 import SearchFilters from "@/components/search-filters";
 import PostList from "@/components/post-list";
 
@@ -20,11 +21,11 @@ async function Journal({ searchParams }: PageProps<"/">) {
     : "1";
   let result: [BlogPage, Category[], Tag[]];
   try {
-    result = await Promise.all([
-      getBlogs({ ...filters, limit: 9 }),
-      getCategories(),
-      getTags(),
+    const [blogs, taxonomy] = await Promise.all([
+      getCachedBlogs({ ...filters, limit: 9 }),
+      getCachedTaxonomy(),
     ]);
+    result = [blogs, taxonomy.categories, taxonomy.tags];
   } catch (error) {
     return (
       <div className="empty-state" role="alert">
@@ -39,7 +40,6 @@ async function Journal({ searchParams }: PageProps<"/">) {
       </div>
     );
   }
-  // const blogs  = apiRequest("/blogs")
   const [data, categories, tags] = result;
   return (
     <>
@@ -61,6 +61,7 @@ async function Journal({ searchParams }: PageProps<"/">) {
         tags={tags}
         filters={filters}
       />
+
       <PostList data={data} filters={filters} />
     </>
   );
@@ -92,7 +93,7 @@ export default function Home(props: PageProps<"/">) {
         <div className="section-heading">
           <div>
             <p className="eyebrow">The journal</p>
-            <h2>Worth a little of your time.</h2>
+            <h2>Worth all of your time.</h2>
           </div>
           <p className="section-note">New voices. Fresh perspectives.</p>
         </div>

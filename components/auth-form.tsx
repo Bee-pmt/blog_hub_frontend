@@ -123,6 +123,11 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   autoComplete={register ? "new-password" : "current-password"}
                 />
               </label>
+              {!register && (
+                <Link className="text-link forgot-password-link" href="/forgot-password">
+                  Forgot password?
+                </Link>
+              )}
               {register && (
                 <p className="field-help">
                   At least 8 characters, up to 72 UTF-8 bytes.

@@ -1347,3 +1347,66 @@ label .form-control {
     height: 300px;
   }
 }
+
+/* Account security controls use the shared form and theme colors. */
+.sidebar-account-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.8rem 0 1.5rem;
+}
+.sidebar-account-heading h2 {
+  min-width: 0;
+  margin: 0;
+}
+.sidebar-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+.sidebar-settings-button:hover {
+  background: var(--subtle);
+}
+.forgot-password-link {
+  align-self: flex-end;
+  font-size: 0.8rem;
+}
+.password-fields {
+  min-width: 0;
+  border: 0;
+}
+.verification-code {
+  letter-spacing: 0.25em;
+  font-family: var(--font-geist-mono), monospace;
+}
+.password-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+}
+.password-recovery-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.users-description { margin: 1rem 0 1.5rem; font-size: 0.85rem; line-height: 1.7; }
+.user-search { display: flex; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.user-search label { flex: 1; min-width: min(240px, 100%); }
+.user-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.user-table th, .user-table td { text-align: left; padding: 1rem 0.8rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.user-table thead { background: var(--subtle); }
+.user-table tbody th { font-weight: normal; }
+.user-name { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.user-email { display: block; margin-top: 0.4rem; color: var(--muted); overflow-wrap: anywhere; }
+.user-table .form-control { min-width: 105px; }
+.user-table .button { white-space: nowrap; }
+.user-table-wrap { border: 1px solid var(--border); border-radius: 0.35rem; }

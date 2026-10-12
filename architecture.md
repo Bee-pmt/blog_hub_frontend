@@ -21,28 +21,29 @@ This document describes the current frontend implementation. The frontend is a N
 ```mermaid
 flowchart LR
     Browser[Browser: interactive components]
-    Next[Next.js server: pages and authentication actions]
+    Next[Next.js server: pages and Server Actions]
     API[NestJS backend API]
     Images[Backend image storage]
     Database[(Backend database)]
     Browser -->|Page requests and Server Actions| Next
-    Next -->|Public content and authentication| API
-    Browser -->|Bearer token: workspace requests and uploads| API
+    Next -->|Public reads and authorized writes| API
+    Browser -->|Bearer token: private reads and user management| API
     Browser -->|Display uploaded covers| Images
     API --> Database
     API --> Images
 ```
 
-Public pages fetch content on the Next.js server. Authentication forms call Server Actions, which communicate with the backend and manage the frontend refresh cookie. Workspace components call the backend directly from the browser using an access token.
+Public pages fetch content on the Next.js server. Authentication forms call Server Actions, which communicate with the backend and manage the frontend refresh cookie. Private workspace reads and user management call the backend from the browser using an access token. Content writes forward that token through a Server Action so cache invalidation follows a successful write.
 
-The frontend has no database connection and no custom API route proxy. Authentication Server Actions do not handle every authenticated mutation: post editing, taxonomy management, and cover uploads currently use the browser API layer.
+The frontend has no database connection and no custom API route proxy. Content Server Actions handle post editing, moderation, taxonomy changes, and cover uploads; the backend remains responsible for authorization.
 
 ## Folder structure
 
 ```text
 blog_frontend/
 ├── action/
-│   └── action.ts              # Authentication Server Actions
+│   ├── action.ts              # Authentication Server Actions
+│   └── content.ts             # Public taxonomy reads and content writes with invalidation
 ├── app/                      # Routes, layouts, global styles, and theme control
 │   ├── blogs/[slug]/          # Public article
 │   ├── dashboard/            # Profile and author/admin workspace
@@ -52,6 +53,7 @@ blog_frontend/
 ├── components/               # Shared UI and feature components
 ├── lib/
 │   ├── api.ts                # API request functions and URL helpers
+│   ├── content.ts            # Cached public stories and taxonomy
 │   ├── session.ts            # In-memory access token and refresh coordination
 │   └── editor.ts             # Post validation and Markdown editing helpers
 ├── store/
@@ -86,7 +88,7 @@ The current project uses root-level `app/`, `components/`, `lib/`, and the singu
 
 The UI calls the dashboard “Profile” or “My workspace,” while its URL remains `/dashboard`. Dashboard pages are marked to prevent search indexing.
 
-Admin All stories retains Read, Publish/Unpublish, and confirmed Delete controls, without editor links. Owners edit posts through My stories, including admins' own posts. Publication controls send status updates to the backend, which remains responsible for authorizing them.
+Admin All stories retains Read, Publish/Unpublish, and confirmed Delete controls, without editor links. Owners edit posts through My stories, including admins' own posts. Admin publication controls use `PATCH /admin/blogs/:id/status`; owner controls use `PATCH /blogs/:id`. Admin unpublishing sets `publicationBlocked`, which disables owner publishing in both My stories and the editor while allowing draft edits. Only the admin status endpoint can publish the story again and clear the block. The backend enforces these rules.
 
 Category management groups tags under expandable category rows. Authors see categories they created, plus categories containing their own tags; expanding a category shows only that author's tags. A category created by someone else provides grouping context and cannot be renamed by the author. Admins see and manage all categories and tags. The New tag category selector shows all categories for both roles, so an author can create a tag under another user's category even without owning any categories. The new tag belongs to its creator. Public discovery and the story editor also use all available categories and tags.
 
@@ -121,11 +123,11 @@ Submitting filters updates the URL and resets pagination. Tags are limited to th
 
 The article page fetches by slug. React `cache` shares the article request between metadata generation and rendering within the server render. Missing articles use the not-found flow. Request-time sections have Suspense loading states.
 
-The shared request helper uses `cache: "no-store"`. Although Next.js Cache Components are enabled, API content is not configured for persistent caching. Article dates use a fixed UTC timezone.
+The shared request helper uses `cache: "no-store"` to keep private requests fresh. `lib/content.ts` wraps public story lists, articles, and taxonomy in Next.js `use cache`, keyed by function arguments, with `blogs` and `taxonomy` tags. Entries revalidate after 60 seconds and expire after 120 seconds, with client stale time set to zero. Successful content Server Actions immediately expire affected tags using `updateTag`; taxonomy writes invalidate both tags because stories embed taxonomy. Changes made directly to the backend follow the time-based refresh. Existing open pages do not receive live updates. Article dates use a fixed UTC timezone.
 
 ## API layer
 
-[`lib/api.ts`](lib/api.ts) is shared by server and browser code. It contains query-string helpers, image URL resolution, error formatting, and the shared `apiRequest` function. Application types live in [`type/type.ts`](type/type.ts) and are imported with `import type`, including API models, request inputs, authentication state, editor recovery data, and component props. All backend endpoint paths and payload construction live here in exported functions such as `getBlogs`, `saveBlog`, `getCategories`, and `saveTaxonomy`. Pages and components call these functions instead of constructing requests. Protected functions receive the authenticated `api` function from `AuthProvider`, preserving token refresh and session handling without importing browser session state into the shared module.
+[`lib/api.ts`](lib/api.ts) is shared by server and browser code. It contains query-string helpers, image URL resolution, error formatting, and the shared `apiRequest(route, method = "GET", options)` function. The optional options argument carries bodies and headers. Application types live in [`type/type.ts`](type/type.ts) and are imported with `import type`, including API models, request inputs, authentication state, editor recovery data, and component props. All backend endpoint paths and payload construction live here in exported functions such as `getBlogs`, `saveBlog`, `getCategories`, and `saveTaxonomy`. Pages and components call these functions instead of constructing requests. Protected functions receive the authenticated `api` function from `AuthProvider`, preserving token refresh and session handling without importing browser session state into the shared module.
 
 For example, a Server Component calls `await getBlogs({ page: 1, limit: 9 })`. A protected Client Component gets `api` from `useAuth()` and calls `await getCategories(api)` or `await saveBlog(input, id, imageFile, api)`. Add future backend endpoints to this module and reuse `apiRequest` for transport and error handling.
 

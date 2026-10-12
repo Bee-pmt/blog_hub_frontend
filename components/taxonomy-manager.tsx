@@ -4,13 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   errorMessage,
-  getCategories,
-  getTags,
   saveTaxonomy,
   deleteTaxonomy,
 } from "@/lib/api";
 import { useAuth } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
+import { getTaxonomyAction } from "@/action/content";
 export default function TaxonomyManager() {
   const { user, api } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,11 +42,12 @@ export default function TaxonomyManager() {
     let active = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    Promise.all([getCategories(api), getTags(api)])
-      .then(([nextCategories, nextTags]) => {
+    getTaxonomyAction()
+      .then((result) => {
+        if (!result.ok) throw new Error(result.error);
         if (active) {
-          setCategories(nextCategories);
-          setTags(nextTags);
+          setCategories(result.data.categories);
+          setTags(result.data.tags);
         }
       })
       .catch((failure) => {

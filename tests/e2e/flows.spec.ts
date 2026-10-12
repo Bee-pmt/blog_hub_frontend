@@ -1,7 +1,18 @@
 import { test, expect, Page } from "@playwright/test";
 const api = "http://localhost:5301/api/v1";
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, page, context }) => {
   await request.post(`${api}/__reset`);
+  // Isolate the real Next cache through authorized writes to disposable fixture data.
+  await login(page, "admin@test.local");
+  await page.goto("/dashboard/taxonomy");
+  const form = page.locator("form").filter({ has: page.getByRole("heading", { name: "New category", exact: true }) });
+  await form.getByRole("textbox", { name: "Name", exact: true }).fill("Cache reset");
+  await form.getByRole("button", { name: "Create category", exact: true }).click();
+  await page.locator(".taxonomy-row").filter({ hasText: "/cache-reset" }).getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await context.clearCookies();
+  await page.goto("/login");
 });
 async function login(page: Page, email = "author@test.local") {
   await page.goto("/login");
@@ -15,7 +26,7 @@ test("published stories, combined URL filters, pagination and safe article", asy
   page,
 }) => {
   await page.goto("/");
-  await expect(page.getByText("12 stories", { exact: true })).toBeVisible();
+  await expect(page.getByText("12 stories", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.screenshot({
     path: test.info().outputPath("journal.png"),
     fullPage: true,
@@ -29,7 +40,7 @@ test("published stories, combined URL filters, pagination and safe article", asy
   await page.getByLabel("Author", { exact: true }).fill("Alex");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page).toHaveURL(/q=story\+1/);
-  await expect(page.getByText("2 stories", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 stories", { exact: true }).filter({ visible: true })).toBeVisible();
   await page
     .getByRole("link", { name: "Thoughtful story 1", exact: true })
     .click();
@@ -154,7 +165,7 @@ test("failed save retains content and offers browser recovery after reload", asy
   await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
 });
 test("author taxonomy permissions and blocked admin route", async ({
-  page,
+  page, request,
 }) => {
   await login(page);
   await page.goto("/dashboard/taxonomy");
@@ -193,10 +204,9 @@ test("author taxonomy permissions and blocked admin route", async ({
   await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
   await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Ideas");
   await editDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Life");
-  await page.route(`${api}/categories/cat-1`, (route) => route.fulfill({
-    status: 409,
-    json: { message: "Name already exists" },
-  }), { times: 1 });
+  await request.post(`${api}/__fail-request`, { data: {
+    path: "/categories/cat-1", method: "PATCH", status: 409, message: "Name already exists",
+  } });
   await editDialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(editDialog.getByRole("alert")).toHaveText("Name already exists");
   await expect(editDialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Life");
@@ -295,12 +305,63 @@ test("admin moderates another author and deletes a category without deleting sto
   await page.goto("/blogs/thoughtful-story-2");
   await expect(page.locator(".article-header .eyebrow")).toHaveText("Uncategorized");
 });
+test("admin unpublishes another author's story and controls republication", async ({ page, browser, request }) => {
+  await login(page, "admin@test.local");
+  // Prime the public article cache before moderation.
+  await page.goto("/blogs/thoughtful-story-1");
+  await expect(page.getByRole("heading", { name: "Thoughtful story 1", exact: true })).toBeVisible();
+  await page.goto("/dashboard/admin/posts");
+  const story = page.locator(".manage-row").filter({ has: page.getByRole("heading", { name: "Thoughtful story 1", exact: true }) });
+  await request.post(`${api}/__fail-request`, { data: {
+    path: "/admin/blogs/story-1/status", method: "PATCH", status: 503, message: "Moderation temporarily unavailable",
+  } });
+  await story.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Moderation temporarily unavailable" })).toBeVisible();
+  await expect(story.getByRole("button", { name: "Unpublish", exact: true })).toBeEnabled();
+  await story.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(story.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+  expect((await request.get(`${api}/blogs/thoughtful-story-1`)).status()).toBe(404);
+  const journal = await (await request.get(`${api}/blogs?limit=50`)).json();
+  expect(journal.items.some((item: { id: string }) => item.id === "story-1")).toBe(false);
+
+  const authorContext = await browser.newContext({ baseURL: "http://localhost:3001" });
+  try {
+    const authorPage = await authorContext.newPage();
+    await login(authorPage);
+    const ownStory = authorPage.locator(".manage-row").filter({ has: authorPage.getByRole("heading", { name: "Thoughtful story 1", exact: true }) });
+    await expect(ownStory.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    await authorPage.goto("/dashboard/posts/story-1/edit");
+    await expect(authorPage.getByText("Unpublished by an admin. You can edit and save this draft, but only an admin can publish it again.", { exact: true })).toBeVisible();
+    await expect(authorPage.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    await authorPage.getByLabel("Story title", { exact: true }).fill("Updated moderated story");
+    await authorPage.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(authorPage.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Draft saved." })).toBeVisible();
+    await expect(authorPage.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    const authorLogin = await request.post(`${api}/auth/login`, { data: { email: "author@test.local", password: "password123" } });
+    const { accessToken } = await authorLogin.json();
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    expect((await request.patch(`${api}/admin/blogs/story-1/status`, { headers, data: { status: "published" } })).status()).toBe(403);
+    expect((await request.patch(`${api}/blogs/story-1`, { headers, data: { status: "published" } })).status()).toBe(403);
+
+    await page.reload();
+    const updatedStory = page.locator(".manage-row").filter({ hasText: "Updated moderated story" });
+    await updatedStory.getByRole("button", { name: "Publish", exact: true }).click();
+    await expect(updatedStory.getByRole("button", { name: "Unpublish", exact: true })).toBeEnabled();
+    const published = await (await request.get(`${api}/blogs/thoughtful-story-1`)).json();
+    expect(published).toMatchObject({ title: "Updated moderated story", status: "published", publicationBlocked: false });
+    await authorPage.reload();
+    await expect(authorPage.getByRole("button", { name: "Unpublish", exact: true })).toBeEnabled();
+  } finally {
+    await authorContext.close();
+  }
+});
+
 test("mobile layout, dark theme and keyboard accessible controls", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(page.getByText("12 stories", { exact: true })).toBeVisible();
+  await expect(page.getByText("12 stories", { exact: true }).filter({ visible: true })).toBeVisible();
   const themeSwitch = page.getByRole("switch", { name: "Dark mode" });
   await expect(themeSwitch).toHaveAttribute("aria-checked", "false");
   await themeSwitch.click();
@@ -389,11 +450,13 @@ test("device cover upload, replacement, failed save, publication and removal", a
   await expect(page.locator('.notice[role="alert"]')).toHaveText("Choose a non-empty image of up to 5 MB.");
   await picker.setInputFiles(image);
   await expect(page.getByRole("img", { name: "Selected cover preview" })).toBeVisible();
-  const created = page.waitForResponse((response) => response.url() === `${api}/blogs` && response.request().method() === "POST");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  const firstResponse = await created;
-  expect(firstResponse.request().headers()["content-type"]).toContain("multipart/form-data; boundary=");
-  const first = await firstResponse.json();
+  await expect(page).toHaveURL(/\/posts\/[^/]+\/edit$/);
+  const token = (await (await request.post(`${api}/auth/login`, { data: { email: "author@test.local", password: "password123" } })).json()).accessToken;
+  const headers = { Authorization: `Bearer ${token}` };
+  const first = await (await request.get(`${api}/me/blogs/${page.url().split("/").at(-2)}`, { headers })).json();
+  const log = await (await request.get(`${api}/__requests`)).json();
+  expect(log.findLast((entry: { path: string; method: string }) => entry.path === "/api/v1/blogs" && entry.method === "POST").contentType).toContain("multipart/form-data; boundary=");
   expect(first.coverImageUrl).toMatch(/^\/images\/.+\.png$/);
   await expect(page).toHaveURL(/\/posts\/[^/]+\/edit$/);
   await expect(page.getByRole("img", { name: "Story cover", exact: true })).toHaveAttribute("src", `http://localhost:5301${first.coverImageUrl}`);
@@ -403,9 +466,9 @@ test("device cover upload, replacement, failed save, publication and removal", a
   await expect(page.locator('.notice[role="alert"]')).toHaveText("Temporary save failure");
   await expect(page.locator('[data-sonner-toast][data-type="error"]').filter({ hasText: "Temporary save failure" })).toBeVisible();
   await expect(page.getByText("Selected: replacement.png", { exact: true })).toBeVisible();
-  const replaced = page.waitForResponse((response) => response.url() === `${api}/blogs/${first.id}` && response.request().method() === "PATCH" && response.ok());
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  const replacement = await (await replaced).json();
+  await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
+  const replacement = await (await request.get(`${api}/me/blogs/${first.id}`, { headers })).json();
   expect(replacement.coverImageUrl).not.toBe(first.coverImageUrl);
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
@@ -419,4 +482,132 @@ test("device cover upload, replacement, failed save, publication and removal", a
   await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("img", { name: "Story cover", exact: true })).toHaveCount(0);
+});
+
+
+test("settings changes passwords, preserves incorrect-password sessions, and signs out other tabs", async ({ page, context }) => {
+  await login(page);
+  const otherTab = await context.newPage();
+  await otherTab.goto("/dashboard");
+  await expect(otherTab.getByRole("link", { name: "Account settings" })).toBeVisible();
+  await page.getByRole("link", { name: "Account settings" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await page.screenshot({ path: test.info().outputPath("password-settings.png"), fullPage: true });
+  await page.getByLabel("Current password", { exact: true }).fill("wrongpassword");
+  await page.getByLabel("New password", { exact: true }).fill("newpassword123");
+  await page.getByLabel("Confirm new password", { exact: true }).fill("different123");
+  await page.getByRole("button", { name: "Change password", exact: true }).click();
+  await expect(page.locator(".account-card:visible").getByRole("alert")).toHaveText("Passwords do not match.");
+  await page.getByLabel("Confirm new password", { exact: true }).fill("newpassword123");
+  await page.getByRole("button", { name: "Change password", exact: true }).click();
+  await expect(page.locator(".account-card:visible").getByRole("alert")).toHaveText("Current password is incorrect");
+  await expect(page.getByRole("link", { name: "Profile", exact: true })).toBeVisible();
+  await page.getByLabel("Current password", { exact: true }).fill("password123");
+  await page.getByRole("button", { name: "Change password", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(otherTab).toHaveURL(/\/login/);
+  expect((await context.cookies()).some((cookie) => cookie.name === "bloghub_refresh")).toBe(false);
+  await page.locator(".account-card:visible").getByLabel("Email", { exact: true }).fill("author@test.local");
+  await page.locator(".account-card:visible").getByLabel("Password", { exact: true }).fill("newpassword123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+test("forgot password verifies the emailed code and accepts the new password", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await page.locator(".account-card:visible").getByLabel("Email", { exact: true }).fill("author@test.local");
+  await page.getByRole("button", { name: "Send verification code" }).click();
+  await expect(page.getByRole("heading", { name: "Reset password", exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: test.info().outputPath("password-recovery-mobile.png"), fullPage: true });
+  await page.getByLabel("Verification code").fill("999999");
+  await page.getByLabel("New password", { exact: true }).fill("resetpassword123");
+  await page.getByLabel("Confirm new password", { exact: true }).fill("resetpassword123");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page.locator(".account-card:visible").getByRole("alert")).toHaveText("Invalid or expired reset code");
+  await page.getByLabel("Verification code").fill("012345");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.locator(".account-card:visible").getByLabel("Email", { exact: true }).fill("author@test.local");
+  await page.locator(".account-card:visible").getByLabel("Password", { exact: true }).fill("resetpassword123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+
+test("admin user management searches, paginates, confirms role changes and manages access", async ({ page }) => {
+  await login(page, "admin@test.local");
+  await page.getByRole("link", { name: "Users · Admin", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/admin\/users$/);
+  const table = page.locator(".user-table:visible");
+  await expect(table.locator("tbody tr")).toHaveCount(10);
+  await expect(page.getByText("15 users · 10 per page", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(table.locator("tbody tr")).toHaveCount(5);
+  await expect(page.getByRole("navigation", { name: "User pages" }).getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.getByLabel("Search users", { exact: true }).fill("author@test.local");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(page.getByRole("navigation", { name: "User pages" }).getByText("Page 1 of 1", { exact: true })).toBeVisible();
+  await page.getByLabel("Role for author@test.local").selectOption("admin");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByLabel("Role for author@test.local")).toHaveValue("author");
+  await page.getByLabel("Role for author@test.local").selectOption("admin");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByLabel("Role for author@test.local")).toHaveValue("admin");
+  await page.getByRole("button", { name: "Deactivate", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(table.getByText("Inactive", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Reactivate", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(table.getByText("Active", { exact: true })).toBeVisible();
+  await page.getByLabel("Search users", { exact: true }).fill("no-such-account");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No users found." })).toBeVisible();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(table.locator("tbody tr")).toHaveCount(10);
+  const self = table.getByRole("row").filter({ hasText: "admin@test.local" });
+  await expect(self.getByRole("button", { name: "Deactivate" })).toBeDisabled();
+  await page.screenshot({ path: test.info().outputPath("admin-users.png"), fullPage: true });
+});
+
+test("authors cannot access user management", async ({ page }) => {
+  await login(page);
+  await expect(page.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
+  await page.goto("/dashboard/admin/users");
+  await expect(page.getByRole("heading", { name: "This workspace is for admins." })).toBeVisible();
+  await expect(page.locator(".user-table:visible")).toHaveCount(0);
+});
+
+
+test("public reads reuse Next cache and taxonomy writes invalidate it", async ({ page, request }) => {
+  const url = "/?q=Thoughtful&category=ideas&page=1";
+  const reads = async () => (await (await request.get(`${api}/__requests`)).json()) as { path: string; method: string }[];
+  await page.goto(url);
+  await expect(page.getByText("12 stories", { exact: true }).filter({ visible: true })).toBeVisible();
+  const first = await reads();
+  await page.reload();
+  await expect(page.getByText("12 stories", { exact: true }).filter({ visible: true })).toBeVisible();
+  const second = await reads();
+  const count = (log: typeof first, path: string) => log.filter((entry) => entry.method === "GET" && entry.path === path).length;
+  const listPath = "/api/v1/blogs?q=Thoughtful&category=ideas&page=1&limit=9";
+  expect(count(first, listPath)).toBeGreaterThan(0);
+  expect(count(second, listPath)).toBe(count(first, listPath));
+  expect(count(second, "/api/v1/categories")).toBe(count(first, "/api/v1/categories"));
+  await login(page);
+  await page.goto("/dashboard/taxonomy");
+  await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit category", exact: true });
+  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Updated Ideas");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.goto(url);
+  await expect(page.getByRole("link", { name: "Updated Ideas", exact: true }).first()).toBeVisible();
+  await expect(page.getByText("0 stories", { exact: true }).filter({ visible: true })).toBeVisible();
+  const third = await reads();
+  expect(count(third, listPath)).toBeGreaterThan(count(second, listPath));
+  expect(count(third, "/api/v1/categories")).toBeGreaterThan(count(second, "/api/v1/categories"));
 });

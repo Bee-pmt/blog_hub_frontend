@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@/type/type";
 import { ApiError } from "@/lib/api";
 import { createAuthStore } from "@/store/auth-store";
-import { logoutAction, submitAuthAction } from "@/action/action";
+import { clearSessionAction, logoutAction, submitAuthAction } from "@/action/action";
 import {
   authenticatedRequest,
   clearSession,
@@ -13,6 +13,7 @@ import {
 vi.mock("@/action/action", () => ({
   submitAuthAction: vi.fn(),
   logoutAction: vi.fn(),
+  clearSessionAction: vi.fn(),
 }));
 vi.mock("@/lib/session", () => ({
   authenticatedRequest: vi.fn(),
@@ -118,5 +119,32 @@ describe("Zustand authentication store", () => {
     await expect(store.getState().api("/blogs")).rejects.toMatchObject({ status: 401 });
     expect(store.getState().user).toBeNull();
     expect(clearSession).toHaveBeenCalled();
+  });
+});
+
+
+describe("Password change sessions", () => {
+  it("keeps the account signed in when the current password is incorrect", async () => {
+    const store = createAuthStore();
+    await store.getState().restore();
+    vi.mocked(authenticatedRequest).mockRejectedValueOnce(new ApiError("Current password is incorrect", 401));
+    await expect(store.getState().changePassword("wrong", "newpassword123")).rejects.toMatchObject({ status: 401 });
+    expect(store.getState().user).toEqual(user);
+    expect(clearSessionAction).not.toHaveBeenCalled();
+    expect(authenticatedRequest).toHaveBeenLastCalledWith("/auth/change-password", "POST", {
+      body: JSON.stringify({ currentPassword: "wrong", newPassword: "newpassword123" }),
+    }, false);
+  });
+
+  it("clears frontend cookies, memory, and account recovery after a successful change", async () => {
+    const store = createAuthStore();
+    await store.getState().restore();
+    localStorage.setItem("bloghub-recovery:author:new", "draft");
+    await store.getState().changePassword("password123", "newpassword123");
+    expect(clearSessionAction).toHaveBeenCalledOnce();
+    expect(clearSession).toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+    expect(localStorage.getItem("bloghub-recovery:author:new")).toBeNull();
+    expect(logoutAction).not.toHaveBeenCalled();
   });
 });

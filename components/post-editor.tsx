@@ -16,8 +16,6 @@ import {
   dateLabel,
   errorMessage,
   blogImageUrl,
-  getCategories,
-  getTags,
   getEditableBlog,
   saveBlog,
   deleteBlog,
@@ -28,6 +26,7 @@ import RichEditor from "./rich-editor";
 import Markdown from "./markdown";
 import BlogImage from "./blog-image";
 import ConfirmDialog from "./confirm-dialog";
+import { getTaxonomyAction } from "@/action/content";
 
 const emptyDraft: Draft = {
   title: "",
@@ -102,13 +101,13 @@ export default function PostEditor({
     setLoading(true);
     setLoadError("");
     Promise.all([
-      getCategories(api),
-      getTags(api),
+      getTaxonomyAction(),
       id
         ? getEditableBlog(id, admin, api)
         : Promise.resolve(null),
     ])
-      .then(([nextCategories, nextTags, nextPost]) => {
+      .then(([taxonomy, nextPost]) => {
+        if (!taxonomy.ok) throw new Error(taxonomy.error);
         if (!active) return;
         const initial = nextPost
           ? {
@@ -119,8 +118,8 @@ export default function PostEditor({
               coverImageUrl: nextPost.coverImageUrl || "",
             }
           : { ...emptyDraft, tagIds: [] };
-        setCategories(nextCategories);
-        setTags(nextTags);
+        setCategories(taxonomy.data.categories);
+        setTags(taxonomy.data.tags);
         setPost(nextPost);
         setImageFile(null);
         setDraft(initial);
@@ -648,6 +647,11 @@ export default function PostEditor({
         />
       )}
       <div className="editor-save">
+        {post?.publicationBlocked && (
+          <p className="notice" role="status">
+            Unpublished by an admin. You can edit and save this draft, but only an admin can publish it again.
+          </p>
+        )}
         <p className="field-help">
           {dirty
             ? "Unsaved changes"
@@ -670,7 +674,7 @@ export default function PostEditor({
           </button>
           <button
             className="button button-primary"
-            disabled={busy || !!recovery}
+            disabled={busy || !!recovery || !!post?.publicationBlocked}
             onClick={() =>
               void save(post?.status === "published" ? "draft" : "published")
             }
