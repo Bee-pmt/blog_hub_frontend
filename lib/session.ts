@@ -1,6 +1,6 @@
-import type { TokenResponse } from "@/type/type";
+import type { TokenResponse } from "@/types/models";
 import { ApiError, apiRequest } from "./api";
-import { refreshSessionAction } from "@/action/action";
+import { refreshSessionAction } from "@/actions/auth";
 let accessToken = "";
 let expiresAt = 0;
 let refreshPromise: Promise<string> | null = null;

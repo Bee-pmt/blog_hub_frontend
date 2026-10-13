@@ -1,4 +1,4 @@
-import PostManager from "@/components/post-manager";
+import PostManager from "@/features/blogs/post-manager";
 export default function AdminPostsPage() {
   return <PostManager admin />;
 }

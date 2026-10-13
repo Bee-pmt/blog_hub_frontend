@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiRequest, Blog, BlogInput, BlogPage, Category, Tag } from "@/type/type";
-import { createBlogStore, blogListKey } from "@/store/blog-store";
-import { createTaxonomyStore } from "@/store/taxonomy-store";
+import type { ApiRequest, Blog, BlogInput, BlogPage, Category, Tag } from "@/types/models";
+import { createBlogStore, blogListKey } from "@/features/blogs/blog-store";
+import { createTaxonomyStore } from "@/features/taxonomy/taxonomy-store";
 import { getEditableBlog, getManagedBlogs, saveBlog, setBlogStatus, deleteBlog, saveTaxonomy, deleteTaxonomy } from "@/lib/api";
-import { getTaxonomyAction } from "@/action/content";
+import { getTaxonomyAction } from "@/actions/content";
 
 vi.mock("@/lib/api", async (original) => ({
   ...await original<typeof import("@/lib/api")>(),
   getEditableBlog: vi.fn(), getManagedBlogs: vi.fn(), saveBlog: vi.fn(),
   setBlogStatus: vi.fn(), deleteBlog: vi.fn(), saveTaxonomy: vi.fn(), deleteTaxonomy: vi.fn(),
 }));
-vi.mock("@/action/content", () => ({ getTaxonomyAction: vi.fn() }));
+vi.mock("@/actions/content", () => ({ getTaxonomyAction: vi.fn() }));
 const api: ApiRequest = vi.fn();
 const blog: Blog = {
   id: "story-1", title: "A story", slug: "a-story", content: "Body", status: "draft",

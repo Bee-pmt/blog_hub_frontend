@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { User } from "@/type/type";
+import type { User } from "@/types/models";
 import { contentRequest } from "@/lib/content-client";
 import { ApiError } from "@/lib/api";
-import { createAuthStore } from "@/store/auth-store";
-import { clearSessionAction, logoutAction, submitAuthAction } from "@/action/action";
+import { createAuthStore } from "@/features/auth/auth-store";
+import { clearSessionAction, logoutAction, submitAuthAction } from "@/actions/auth";
 import {
   authenticatedRequest,
   clearSession,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/session";
 
 vi.mock("@/lib/content-client", () => ({ contentRequest: vi.fn() }));
-vi.mock("@/action/action", () => ({
+vi.mock("@/actions/auth", () => ({
   submitAuthAction: vi.fn(),
   logoutAction: vi.fn(),
   clearSessionAction: vi.fn(),

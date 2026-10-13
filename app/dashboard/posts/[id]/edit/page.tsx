@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import PostEditor from "@/components/post-editor";
+import PostEditor from "@/features/blogs/post-editor";
 async function Editor({ params }: PageProps<"/dashboard/posts/[id]/edit">) {
   const { id } = await params;
   return <PostEditor id={id} key={id} />;

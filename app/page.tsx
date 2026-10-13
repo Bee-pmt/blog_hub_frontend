@@ -1,10 +1,10 @@
-import type { Category, Tag, BlogPage, Filters } from "@/type/type";
+import type { Category, Tag, BlogPage, Filters } from "@/types/models";
 import { Suspense } from "react";
 import Link from "next/link";
 import { queryString, errorMessage } from "@/lib/api";
-import { getCachedBlogs, getCachedTaxonomy } from "@/lib/content";
-import SearchFilters from "@/components/search-filters";
-import PostList from "@/components/post-list";
+import { getCachedBlogs, getCachedTaxonomy } from "@/lib/content-cache";
+import SearchFilters from "@/features/blogs/search-filters";
+import PostList from "@/features/blogs/post-list";
 
 async function Journal({ searchParams }: PageProps<"/">) {
   const params = await searchParams;

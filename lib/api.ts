@@ -14,7 +14,7 @@ import type {
   TaxonomyInput,
   RegistrationInput,
   TaxonomyKind,
-} from "@/type/type";
+} from "@/types/models";
 export const API_BASE = (
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5300/api/v1"
 ).replace(/\/$/, "");

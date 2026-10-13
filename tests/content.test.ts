@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cacheLife, cacheTag, updateTag } from "next/cache";
-import { refreshSessionAction } from "@/action/action";
+import { refreshSessionAction } from "@/actions/auth";
 import { contentRequest } from "@/lib/content-client";
-import { getCachedBlogs, getCachedBlog, getCachedTaxonomy } from "@/lib/content";
-import { mutateContentAction } from "@/action/content";
+import { getCachedBlogs, getCachedBlog, getCachedTaxonomy } from "@/lib/content-cache";
+import { mutateContentAction } from "@/actions/content";
 import { authenticatedRequest, setSession, clearSession } from "@/lib/session";
 
 vi.mock("next/cache", () => ({ cacheLife: vi.fn(), cacheTag: vi.fn(), updateTag: vi.fn() }));
-vi.mock("@/action/action", () => ({ refreshSessionAction: vi.fn() }));
+vi.mock("@/actions/auth", () => ({ refreshSessionAction: vi.fn() }));
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();

@@ -1,11 +1,11 @@
-import type { Blog } from "@/type/type";
+import type { Blog } from "@/types/models";
 import { cache, Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApiError, dateLabel, errorMessage, queryString } from "@/lib/api";
-import { getCachedBlog } from "@/lib/content";
-import Markdown from "@/components/markdown";
-import BlogImage from "@/components/blog-image";
+import { getCachedBlog } from "@/lib/content-cache";
+import Markdown from "@/features/blogs/markdown";
+import BlogImage from "@/features/blogs/blog-image";
 const getPost = cache(getCachedBlog);
 export async function generateMetadata({ params }: PageProps<"/blogs/[slug]">) {
   const { slug } = await params;

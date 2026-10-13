@@ -1,13 +1,14 @@
 "use client";
+import type { ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { ChildrenProps } from "@/type/type";
+
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "./auth-provider";
+import { useAuth } from "@/features/auth/auth-provider";
 import { errorMessage } from "@/lib/api";
-export default function DashboardShell({ children }: ChildrenProps) {
+export default function DashboardShell({ children }: { children: ReactNode }) {
   const { user, loading, error, restore, logout } = useAuth(
     useShallow((state) => ({
       user: state.user,

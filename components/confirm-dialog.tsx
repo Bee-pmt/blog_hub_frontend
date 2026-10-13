@@ -1,6 +1,16 @@
 "use client";
-import type { ConfirmDialogProps } from "@/type/type";
+
 import { useEffect, useRef } from "react";
+type ConfirmDialogProps = {
+  confirmLabel?: string;
+  busyLabel?: string;
+  title: string;
+  message: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+};
+
 export default function ConfirmDialog({
   title,
   confirmLabel = "Delete permanently",

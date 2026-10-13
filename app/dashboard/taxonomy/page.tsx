@@ -1,4 +1,4 @@
-import TaxonomyManager from "@/components/taxonomy-manager";
+import TaxonomyManager from "@/features/taxonomy/taxonomy-manager";
 export default function TaxonomyPage() {
   return <TaxonomyManager />;
 }

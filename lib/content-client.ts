@@ -1,5 +1,5 @@
 "use client";
-import { mutateContentAction } from "@/action/content";
+import { mutateContentAction } from "@/actions/content";
 import { ApiError } from "./api";
 import { withAccessToken } from "./session";
 

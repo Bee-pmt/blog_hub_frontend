@@ -1,4 +1,4 @@
-import UserManager from "@/components/user-manager";
+import UserManager from "@/features/users/user-manager";
 
 export const metadata = { title: "User management" };
 export default function AdminUsersPage() {

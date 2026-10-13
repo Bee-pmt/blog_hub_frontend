@@ -1,8 +1,8 @@
 # BlogHub frontend
 
-Next.js App Router frontend for the existing BlogHub NestJS API. Includes the public journal, URL-backed discovery, safe Markdown articles, registration/login, author and admin workspaces, taxonomy management, and a rich text editor with browser recovery. Header and Footer are shared components. Follow `Rule.md` and the installed Next.js guides before extending it.
+Next.js App Router frontend for the existing BlogHub NestJS API. Includes the public journal, URL-backed discovery, safe Markdown articles, registration/login, author and admin workspaces, taxonomy management, and a rich text editor with browser recovery. Header and Footer markup lives in the root layout. Follow `Rule.md` and the installed Next.js guides before extending it.
 
-See [Frontend architecture](architecture.md) for the folder structure, routes, component responsibilities, authentication, data flows, and image upload behavior.
+See [Frontend architecture](docs/architecture.md) for the folder structure, routes, component responsibilities, authentication, data flows, and image upload behavior.
 
 ## Local startup
 
@@ -18,7 +18,7 @@ Open http://localhost:3000. The default public API URL is `http://localhost:5300
 
 In the sibling backend repository, configure its database and authentication environment and run `npm run start:dev`. Its current TypeORM configuration uses PostgreSQL port **5433**. The backend requires `JWT_SECRET` of at least 32 bytes. `FRONTEND_ORIGINS` defaults to `http://localhost:3000`; alternate frontend origins must be explicitly included. Swagger is at http://localhost:5300/api/docs. Production cookies require HTTPS.
 
-Sign-in and registration forms call Server Actions in `action/action.ts`. Next.js stores the backend refresh token in a frontend HttpOnly cookie and forwards it for server-side refresh and sign-out. The access token stays in browser memory for authenticated API calls. The Next.js server must be able to reach `NEXT_PUBLIC_API_BASE_URL`. Existing sessions created before this change may require signing in again.
+Sign-in and registration forms call Server Actions in `actions/auth.ts`. Next.js stores the backend refresh token in a frontend HttpOnly cookie and forwards it for server-side refresh and sign-out. The access token stays in browser memory for authenticated API calls. The Next.js server must be able to reach `NEXT_PUBLIC_API_BASE_URL`. Existing sessions created before this change may require signing in again.
 
 The backend uses schema synchronization. No backend startup, seeding, reset, admin creation, or schema change is performed by this frontend. Use an existing admin account for admin views; public registration creates authors.
 
@@ -77,9 +77,9 @@ Admins can open **Users · Admin** in the workspace sidebar (`/dashboard/admin/u
 
 ## Content caching
 
-Zustand continues to manage authentication. Public story lists and articles use exported functions in `lib/content.ts`; categories and tags share a cached taxonomy function, also available to workspace components through `getTaxonomyAction`. Next.js caches results by function arguments, so filters and pagination remain independent.
+Zustand continues to manage authentication. Public story lists and articles use exported functions in `lib/content-cache.ts`; categories and tags share a cached taxonomy function, also available to workspace components through `getTaxonomyAction`. Next.js caches results by function arguments, so filters and pagination remain independent.
 
-Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `action/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts and dashboard blog lists are never placed in the shared Next.js server cache. They are reused in the account-scoped Zustand store; account information and user management continue to load through authentication. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
+Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `actions/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts and dashboard blog lists are never placed in the shared Next.js server cache. They are reused in the account-scoped Zustand store; account information and user management continue to load through authentication. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
 
 ### Simple API usage
 
@@ -93,11 +93,11 @@ await apiRequest("/auth/register", "POST", {
 });
 ```
 
-Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content.ts` to reuse Next.js cached results. Private reads receive the Zustand authenticated `api` sender. Content writes explicitly receive `contentApi`, which uses a Server Action. Both use the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.
+Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content-cache.ts` to reuse Next.js cached results. Private reads receive the Zustand authenticated `api` sender. Content writes explicitly receive `contentApi`, which uses a Server Action. Both use the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.
 
 ## Zustand content stores
 
-The dashboard shares blog data through `store/blog-store.ts` and category/tag data through `store/taxonomy-store.ts`. `AuthProvider` creates one instance of each per app tree, alongside authentication. These stores keep loaded data and fetch/write actions in one place. List and taxonomy loading/errors live in the stores; the editor owns its detail loading/error state.
+The dashboard shares blog data through `features/blogs/blog-store.ts` and category/tag data through `features/taxonomy/taxonomy-store.ts`. `AuthProvider` creates one instance of each per app tree, alongside authentication. These stores keep loaded data and fetch/write actions in one place. List and taxonomy loading/errors live in the stores; the editor owns its detail loading/error state.
 
 This avoids fetching the same fresh data whenever a component mounts. For example, **Categories & tags** and **Write a story** reuse the same category/tag arrays. **My stories** can reuse its list when you return from the editor. Requests started at the same time share one promise. A saved blog's returned detail is reused when reopening the editor.
 
@@ -116,4 +116,20 @@ useEffect(() => {
 
 The selector subscribes the component to the data it needs. Calling a store action updates every subscribed component automatically.
 
-Browser recovery, storage access, and unsaved-change navigation warnings live in `lib/use-draft-recovery.ts`. The editor calls its read/save/clear functions rather than duplicating browser storage logic. Components use focused Zustand selectors; grouped selections use `useShallow` to avoid updates from unrelated store fields.
+Browser recovery, storage access, and unsaved-change navigation warnings live in `features/blogs/use-draft-recovery.ts`. The editor calls its read/save/clear functions rather than duplicating browser storage logic. Components use focused Zustand selectors; grouped selections use `useShallow` to avoid updates from unrelated store fields.
+
+## Frontend folder structure
+
+- `app/`: Next.js routes and layouts. The small header/footer markup lives in the root layout.
+- `features/auth/`: authentication forms, provider, and Zustand auth store.
+- `features/blogs/`: story lists, editor, rendering, validation, recovery hook, and blog store.
+- `features/taxonomy/`: category/tag management and store.
+- `features/users/`: admin user management.
+- `components/`: UI shared across features: dashboard shell, confirmation dialog, and theme switch.
+- `actions/`: authentication and content Server Actions.
+- `lib/`: shared API/session code and explicitly named public `content-cache.ts`.
+- `types/models.ts`: shared models; component-only props stay beside their component.
+- `tests/`: unit tests and browser tests.
+- `docs/`: [current architecture](docs/architecture.md) and [archived first-release plan](docs/archive/frontend-plan.md).
+
+Feature folders contain their related files directly, without extra component/store subfolders or re-export files. Keep Next.js page files in `app/` and configuration files at the repository root.
