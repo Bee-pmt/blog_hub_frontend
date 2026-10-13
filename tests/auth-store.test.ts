@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@/type/type";
+import { contentRequest } from "@/lib/content-client";
 import { ApiError } from "@/lib/api";
 import { createAuthStore } from "@/store/auth-store";
 import { clearSessionAction, logoutAction, submitAuthAction } from "@/action/action";
@@ -10,6 +11,7 @@ import {
   setSession,
 } from "@/lib/session";
 
+vi.mock("@/lib/content-client", () => ({ contentRequest: vi.fn() }));
 vi.mock("@/action/action", () => ({
   submitAuthAction: vi.fn(),
   logoutAction: vi.fn(),
@@ -109,6 +111,17 @@ describe("Zustand authentication store", () => {
     expect(clearSession).not.toHaveBeenCalled();
   });
 
+  it("uses the explicit content sender and clears the account after its final 401", async () => {
+    const store = createAuthStore();
+    await store.getState().restore();
+    vi.mocked(contentRequest).mockResolvedValueOnce({ id: "story-1" });
+    await store.getState().contentApi("/blogs/story-1", "PATCH", { body: "{}" });
+    expect(contentRequest).toHaveBeenCalledWith("/blogs/story-1", "PATCH", { body: "{}" });
+    expect(authenticatedRequest).toHaveBeenCalledTimes(1); // Session restoration only.
+    vi.mocked(contentRequest).mockRejectedValueOnce(new ApiError("Expired", 401));
+    await expect(store.getState().contentApi("/blogs/story-1", "DELETE")).rejects.toMatchObject({ status: 401 });
+    expect(store.getState().user).toBeNull();
+  });
   it("keeps the user on request errors and clears them on a final 401", async () => {
     const store = createAuthStore();
     await store.getState().restore();

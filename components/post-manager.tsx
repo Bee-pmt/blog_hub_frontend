@@ -1,73 +1,52 @@
 "use client";
-import type { BlogSummary as Blog, BlogPage, PostManagerProps } from "@/type/type";
+import type { BlogSummary as Blog, PostManagerProps } from "@/type/type";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
-import {
-  dateLabel,
-  errorMessage,
-  getManagedBlogs,
-  deleteBlog,
-  setBlogStatus,
-} from "@/lib/api";
-import { useAuth } from "./auth-provider";
+import { dateLabel, errorMessage } from "@/lib/api";
+import { blogListKey } from "@/store/blog-store";
+import { useAuth, useBlogStore } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
 export default function PostManager({ admin = false }: PostManagerProps) {
-  const { api } = useAuth();
+  const api = useAuth((state) => state.api);
+  const contentApi = useAuth((state) => state.contentApi);
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
-  const [revision, setRevision] = useState(0);
-  const [data, setData] = useState<BlogPage | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [mutationError, setError] = useState("");
+  const entry = useBlogStore((state) => state.lists[blogListKey(admin, status, page)]);
+  const loadBlogs = useBlogStore((state) => state.loadBlogs);
+  const changeStatus = useBlogStore((state) => state.changeStatus);
+  const removeBlog = useBlogStore((state) => state.remove);
+  const version = useBlogStore((state) => state.version);
+  const data = entry?.data;
+  const loading = !entry || entry.loading;
+  const error = mutationError || entry?.error || "";
   const [busy, setBusy] = useState("");
   const [deleting, setDeleting] = useState<Blog | null>(null);
   useEffect(() => {
-    // Loading state belongs to this remote request, including filter changes and retries.
     let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError("");
-    getManagedBlogs(admin, { status, page, limit: 10 }, api)
+    loadBlogs(admin, status, page, api)
       .then((result) => {
-        if (active) {
-          if (page > 1 && page > result.totalPages)
-            setPage(Math.max(1, result.totalPages));
-          else setData(result);
-        }
+        if (active && page > 1 && page > result.totalPages)
+          setPage(Math.max(1, result.totalPages));
       })
-      .catch((failure) => {
-        if (active) setError(errorMessage(failure));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, admin, status, page, revision]);
-  useEffect(() => {
-    const refresh = () => setRevision((value) => value + 1);
-    window.addEventListener("bloghub-posts-changed", refresh);
-    return () => window.removeEventListener("bloghub-posts-changed", refresh);
-  }, []);
+      .catch(() => { /* The store exposes the loading error. */ });
+    return () => { active = false; };
+  }, [api, admin, status, page, version, loadBlogs]);
   async function mutate(post: Blog, remove: boolean) {
     if (busy) return;
     setBusy(post.id);
     setError("");
     try {
-      if (remove) await deleteBlog(post.id, api);
+      if (remove) await removeBlog(post.id, contentApi);
       else {
-        await setBlogStatus(
+        await changeStatus(
           post.id,
           post.status === "draft" ? "published" : "draft",
-          api,
           admin,
+          contentApi,
         );
       }
-  // const blogs  = apiRequest("/blogs")
-
-      setRevision((value) => value + 1);
       toast.success(
         remove ? "Story deleted." : post.status === "draft"
           ? "Your story is published." : "Story unpublished.",
@@ -114,7 +93,10 @@ export default function PostManager({ admin = false }: PostManagerProps) {
           {error}{" "}
           <button
             className="text-link"
-            onClick={() => setRevision((value) => value + 1)}
+            onClick={() => {
+              setError("");
+              void loadBlogs(admin, status, page, api, true).catch(() => {});
+            }}
           >
             Try again
           </button>

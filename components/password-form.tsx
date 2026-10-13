@@ -1,4 +1,5 @@
 "use client";
+import { useShallow } from "zustand/react/shallow";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -16,7 +17,16 @@ export default function PasswordForm({ mode }: { mode: "change" | "forgot" }) {
     restore,
     changePassword,
     endSession,
-  } = useAuth();
+  } = useAuth(
+    useShallow((state) => ({
+      user: state.user,
+      loading: state.loading,
+      error: state.error,
+      restore: state.restore,
+      changePassword: state.changePassword,
+      endSession: state.endSession,
+    })),
+  );
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [codeSent, setCodeSent] = useState(false);

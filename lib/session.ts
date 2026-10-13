@@ -1,7 +1,6 @@
 import type { TokenResponse } from "@/type/type";
 import { ApiError, apiRequest } from "./api";
 import { refreshSessionAction } from "@/action/action";
-import { mutateContentAction } from "@/action/content";
 let accessToken = "";
 let expiresAt = 0;
 let refreshPromise: Promise<string> | null = null;
@@ -36,40 +35,15 @@ export function refreshSession() {
   });
   return refreshPromise;
 }
-export async function authenticatedRequest<T>(
-  path: string,
-  method = "GET",
-  options: RequestInit = {},
+// Both direct reads and content Server Actions share token refresh and one 401 retry.
+export async function withAccessToken<T>(
+  send: (token: string) => Promise<T>,
   retryUnauthorized = true,
 ) {
   const token =
     accessToken && Date.now() < expiresAt - 10000
       ? accessToken
       : await refreshSession();
-  const send = async (value: string): Promise<T> => {
-    if (
-      ["POST", "PATCH", "DELETE"].includes(method) &&
-      /^\/(blogs|categories|tags)(\/|$)|^\/admin\/blogs\//.test(path)
-    ) {
-      if (
-        options.body != null && typeof options.body !== "string" &&
-        !(options.body instanceof FormData)
-      )
-        throw new ApiError("Unsupported content body.", 400);
-      const result = await mutateContentAction(
-        path, method, options.body ?? undefined, value,
-      );
-      if (!result.ok) throw new ApiError(result.error, result.status);
-      return result.data as T;
-    }
-    return apiRequest<T>(path, method, {
-      ...options,
-      headers: {
-        ...Object.fromEntries(new Headers(options.headers)),
-        Authorization: `Bearer ${value}`,
-      },
-    });
-  };
   try {
     return await send(token);
   } catch (error) {
@@ -85,4 +59,23 @@ export async function authenticatedRequest<T>(
         : await refreshSession(),
     );
   }
+}
+
+export async function authenticatedRequest<T>(
+  route: string,
+  method = "GET",
+  options: RequestInit = {},
+  retryUnauthorized = true,
+) {
+  return withAccessToken(
+    (token) =>
+      apiRequest<T>(route, method, {
+        ...options,
+        headers: {
+          ...Object.fromEntries(new Headers(options.headers)),
+          Authorization: `Bearer ${token}`,
+        },
+      }),
+    retryUnauthorized,
+  );
 }

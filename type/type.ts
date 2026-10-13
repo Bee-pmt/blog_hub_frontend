@@ -85,6 +85,7 @@ export type Auth = {
     newPassword: string,
   ) => Promise<void>;
   api: ApiRequest;
+  contentApi: ApiRequest;
   initialize: () => () => void;
 };
 

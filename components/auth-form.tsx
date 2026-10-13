@@ -26,7 +26,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
             : "A story is waiting to be written."}
         </p>
       </div>
-      <div className="card account-card">
+      <div className="card account-card ">
         {registered ? (
           <div role="status">
             <h2>You’re ready to write.</h2>

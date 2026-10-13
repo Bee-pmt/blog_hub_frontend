@@ -1,4 +1,5 @@
 "use client";
+import { useShallow } from "zustand/react/shallow";
 import type { ChildrenProps } from "@/type/type";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -7,7 +8,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./auth-provider";
 import { errorMessage } from "@/lib/api";
 export default function DashboardShell({ children }: ChildrenProps) {
-  const { user, loading, error, restore, logout } = useAuth();
+  const { user, loading, error, restore, logout } = useAuth(
+    useShallow((state) => ({
+      user: state.user,
+      loading: state.loading,
+      error: state.error,
+      restore: state.restore,
+      logout: state.logout,
+    })),
+  );
   const [signingOut, setSigningOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const pathname = usePathname();

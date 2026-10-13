@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cacheLife, cacheTag, updateTag } from "next/cache";
+import { refreshSessionAction } from "@/action/action";
+import { contentRequest } from "@/lib/content-client";
 import { getCachedBlogs, getCachedBlog, getCachedTaxonomy } from "@/lib/content";
 import { mutateContentAction } from "@/action/content";
 import { authenticatedRequest, setSession, clearSession } from "@/lib/session";
@@ -41,6 +43,30 @@ describe("public content caching", () => {
     expect(await mutateContentAction("/admin/blogs/story-1/status", "PATCH", '{"status":"draft"}', "token")).toMatchObject({ ok: false, status: 403 });
     expect(updateTag).not.toHaveBeenCalled();
   });
+  it("refreshes the token once for an expired content write and invalidates only after success", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json({ message: "Expired" }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ id: "story-1" }));
+    vi.stubGlobal("fetch", fetcher);
+    vi.mocked(refreshSessionAction).mockResolvedValueOnce({
+      data: { accessToken: "new", expiresIn: 3600 }, error: "", status: 200,
+    });
+    setSession({ accessToken: "old", expiresIn: 3600 });
+    await contentRequest("/blogs/story-1", "PATCH", { body: "{}" });
+    expect(refreshSessionAction).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetcher.mock.calls[1][1].headers).get("Authorization")).toBe("Bearer new");
+    expect(vi.mocked(updateTag).mock.calls).toEqual([["blogs"]]);
+  });
+  it("does not retry or invalidate after a content write loses its connection", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("Offline"));
+    vi.stubGlobal("fetch", fetcher);
+    setSession({ accessToken: "valid", expiresIn: 3600 });
+    await expect(contentRequest("/blogs", "POST", { body: "{}" })).rejects.toMatchObject({ status: 0 });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(refreshSessionAction).not.toHaveBeenCalled();
+    expect(updateTag).not.toHaveBeenCalled();
+  });
   it("rejects unsupported paths before forwarding or invalidating", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
@@ -58,7 +84,7 @@ describe("public content caching", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(cacheTag).not.toHaveBeenCalled();
     expect(updateTag).not.toHaveBeenCalled();
-    await authenticatedRequest("/admin/blogs/story-1/status", "PATCH", { body: '{"status":"draft"}' });
+    await contentRequest("/admin/blogs/story-1/status", "PATCH", { body: '{"status":"draft"}' });
     expect(vi.mocked(updateTag).mock.calls).toEqual([["blogs"]]);
   });
 });

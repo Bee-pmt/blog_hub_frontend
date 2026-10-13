@@ -1,7 +1,5 @@
 "use client";
 import type {
-  Category,
-  Tag,
   Blog,
   BlogInput,
   Draft,
@@ -16,17 +14,14 @@ import {
   dateLabel,
   errorMessage,
   blogImageUrl,
-  getEditableBlog,
-  saveBlog,
-  deleteBlog,
 } from "@/lib/api";
+import { useDraftRecovery } from "@/lib/use-draft-recovery";
 import { needsSourceMode, validatePost } from "@/lib/editor";
-import { useAuth } from "./auth-provider";
+import { useAuth, useBlogStore, useTaxonomyStore } from "./auth-provider";
 import RichEditor from "./rich-editor";
 import Markdown from "./markdown";
 import BlogImage from "./blog-image";
 import ConfirmDialog from "./confirm-dialog";
-import { getTaxonomyAction } from "@/action/content";
 
 const emptyDraft: Draft = {
   title: "",
@@ -35,38 +30,23 @@ const emptyDraft: Draft = {
   tagIds: [],
   coverImageUrl: "",
 };
-function readRecovery(value: string | null): Recovery | null {
-  try {
-    const copy = JSON.parse(value || "null");
-    const draft = copy?.draft;
-    if (
-      draft &&
-      typeof draft.title === "string" &&
-      typeof draft.content === "string" &&
-      typeof draft.categoryId === "string" &&
-      typeof draft.coverImageUrl === "string" &&
-      Array.isArray(draft.tagIds) &&
-      draft.tagIds.every((id: unknown) => typeof id === "string") &&
-      typeof copy.savedAt === "string" &&
-      Number.isFinite(Date.parse(copy.savedAt))
-    )
-      return copy;
-  } catch {
-    /* Invalid recovery data is ignored. */
-  }
-  return null;
-}
 
 export default function PostEditor({
   id,
   admin = false,
 }: PostEditorProps) {
-  const { user, api } = useAuth();
+  const user = useAuth((state) => state.user);
+  const api = useAuth((state) => state.api);
+  const contentApi = useAuth((state) => state.contentApi);
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [post, setPost] = useState<Blog | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const categories = useTaxonomyStore((state) => state.categories);
+  const tags = useTaxonomyStore((state) => state.tags);
+  const loadTaxonomy = useTaxonomyStore((state) => state.load);
+  const loadBlog = useBlogStore((state) => state.loadBlog);
+  const saveBlog = useBlogStore((state) => state.save);
+  const deleteBlog = useBlogStore((state) => state.remove);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
@@ -81,10 +61,13 @@ export default function PostEditor({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const imageInput = useRef<HTMLInputElement>(null);
-  const leaveAllowed = useRef(false);
   const saveRunning = useRef(false);
   const storageKey = `bloghub-recovery:${user?.id}:${id || "new"}`;
   const dirty = !loading && (JSON.stringify(draft) !== baseline || !!imageFile);
+  const { allowLeave, readRecovery, persistRecovery, clearRecovery } = useDraftRecovery({
+    storageKey, draft, dirty, waitingForRecovery: !!recovery,
+    baseUpdatedAt: post?.updatedAt || null, onError: setNotice,
+  });
   useEffect(() => {
     const preview = imageFile ? URL.createObjectURL(imageFile) : "";
     // The preview exists only while this local file is selected.
@@ -101,13 +84,12 @@ export default function PostEditor({
     setLoading(true);
     setLoadError("");
     Promise.all([
-      getTaxonomyAction(),
+      loadTaxonomy(revision > 0),
       id
-        ? getEditableBlog(id, admin, api)
+        ? loadBlog(id, admin, api, revision > 0)
         : Promise.resolve(null),
     ])
-      .then(([taxonomy, nextPost]) => {
-        if (!taxonomy.ok) throw new Error(taxonomy.error);
+      .then(([, nextPost]) => {
         if (!active) return;
         const initial = nextPost
           ? {
@@ -118,26 +100,13 @@ export default function PostEditor({
               coverImageUrl: nextPost.coverImageUrl || "",
             }
           : { ...emptyDraft, tagIds: [] };
-        setCategories(taxonomy.data.categories);
-        setTags(taxonomy.data.tags);
         setPost(nextPost);
         setImageFile(null);
         setDraft(initial);
         setBaseline(JSON.stringify(initial));
         setMode(needsSourceMode(initial.content) ? "source" : "visual");
         setVisualVersion((value) => value + 1);
-        try {
-          const copy = readRecovery(localStorage.getItem(storageKey));
-          setRecovery(
-            copy && JSON.stringify(copy.draft) !== JSON.stringify(initial)
-              ? copy
-              : null,
-          );
-        } catch {
-          setNotice(
-            "Browser recovery is unavailable. Save your work regularly.",
-          );
-        }
+        setRecovery(readRecovery(initial));
       })
       .catch((failure) => {
         if (active) setLoadError(errorMessage(failure));
@@ -148,109 +117,7 @@ export default function PostEditor({
     return () => {
       active = false;
     };
-  }, [api, id, admin, revision, storageKey]);
-  useEffect(() => {
-    if (!dirty || recovery || leaveAllowed.current) return;
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            draft,
-            savedAt: new Date().toISOString(),
-            baseUpdatedAt: post?.updatedAt || null,
-          }),
-        );
-      } catch {
-        setNotice("Browser recovery is unavailable. Save your work regularly.");
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [dirty, draft, recovery, storageKey, post?.updatedAt]);
-  useEffect(() => {
-    if (!dirty) return;
-    const persist = () => {
-      try {
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            draft,
-            savedAt: new Date().toISOString(),
-            baseUpdatedAt: post?.updatedAt || null,
-          }),
-        );
-      } catch {
-        /* Recovery may be blocked by browser storage settings. */
-      }
-    };
-    const unload = (event: BeforeUnloadEvent) => {
-      if (leaveAllowed.current) return;
-      persist();
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    const click = (event: MouseEvent) => {
-      if (leaveAllowed.current || event.defaultPrevented || event.button !== 0)
-        return;
-      const link = (event.target as Element).closest(
-        "a[href]",
-      ) as HTMLAnchorElement | null;
-      const signingOut = (event.target as Element).closest(
-        "[data-leave-editor]",
-      );
-      if (
-        !signingOut &&
-        (!link ||
-          link.target === "_blank" ||
-          link.hasAttribute("download") ||
-          (link.pathname === window.location.pathname &&
-            link.search === window.location.search))
-      )
-        return;
-      if (
-        !window.confirm(
-          "You have unsaved changes. Leave this story? Your browser recovery copy will remain.",
-        )
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      } else persist();
-    };
-    const navigation = (window as Window & { navigation?: EventTarget })
-      .navigation;
-    const traverse = (event: Event) => {
-      const change = event as Event & {
-        navigationType?: string;
-        destination?: { url: string };
-      };
-      if (
-        leaveAllowed.current ||
-        change.navigationType !== "traverse" ||
-        !event.cancelable
-      )
-        return;
-      if (
-        change.destination &&
-        new URL(change.destination.url).pathname === window.location.pathname
-      )
-        return;
-      if (
-        !window.confirm(
-          "You have unsaved changes. Leave this story? Your browser recovery copy will remain.",
-        )
-      )
-        event.preventDefault();
-      else persist();
-    };
-    navigation?.addEventListener("navigate", traverse);
-    window.addEventListener("beforeunload", unload);
-    document.addEventListener("click", click, true);
-    return () => {
-      navigation?.removeEventListener("navigate", traverse);
-      window.removeEventListener("beforeunload", unload);
-      document.removeEventListener("click", click, true);
-    };
-  }, [dirty, draft, storageKey, post?.updatedAt]);
+  }, [api, id, admin, revision, readRecovery, loadTaxonomy, loadBlog]);
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     if (draft[key] === value) return;
     setDraft((current) => ({ ...current, [key]: value }));
@@ -297,19 +164,8 @@ export default function PostEditor({
     setError("");
     setNotice("");
     try {
-      try {
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            draft,
-            savedAt: new Date().toISOString(),
-            baseUpdatedAt: post?.updatedAt || null,
-          }),
-        );
-      } catch {
-        /* Server saving still works without local storage. */
-      }
-      const saved = await saveBlog(input, id, imageFile, api);
+      persistRecovery();
+      const saved = await saveBlog(input, id, imageFile, contentApi);
       const nextDraft = {
         ...draft,
         title: saved.title,
@@ -324,18 +180,13 @@ export default function PostEditor({
       setImageFile(null);
       if (imageInput.current) imageInput.current.value = "";
       setVisualVersion((value) => value + 1);
-      try {
-        localStorage.removeItem(storageKey);
-      } catch {
-        /* No recovery storage. */
-      }
+      clearRecovery();
       toast.success(
         status === "published" ? "Your story is published." : "Draft saved.",
         { id: "post-save" },
       );
-      window.dispatchEvent(new Event("bloghub-posts-changed"));
       if (!id) {
-        leaveAllowed.current = true;
+        allowLeave();
         router.replace(`/dashboard/posts/${saved.id}/edit`);
       }
     } catch (failure) {
@@ -434,11 +285,7 @@ export default function PostEditor({
             <button
               className="text-link"
               onClick={() => {
-                try {
-                  localStorage.removeItem(storageKey);
-                } catch {
-                  /* Storage unavailable. */
-                }
+                clearRecovery();
                 setRecovery(null);
               }}
             >
@@ -712,16 +559,11 @@ export default function PostEditor({
             setBusy(true);
             setError("");
             try {
-              await deleteBlog(id, api);
-              try {
-                localStorage.removeItem(storageKey);
-              } catch {
-                /* Storage unavailable. */
-              }
-              leaveAllowed.current = true;
+              await deleteBlog(id, contentApi);
+              clearRecovery();
+              allowLeave();
               toast.success("Story deleted.");
               router.replace(admin ? "/dashboard/admin/posts" : "/dashboard");
-              window.dispatchEvent(new Event("bloghub-posts-changed"));
             } catch (failure) {
               setError(errorMessage(failure));
               toast.error(errorMessage(failure));

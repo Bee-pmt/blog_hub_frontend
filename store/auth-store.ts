@@ -1,7 +1,7 @@
 "use client";
 
 import { createStore } from "zustand/vanilla";
-import type { Auth } from "@/type/type";
+import type { Auth, ApiRequest } from "@/type/type";
 import { ApiError, errorMessage, getCurrentUser } from "@/lib/api";
 import {
   authenticatedRequest,
@@ -10,6 +10,7 @@ import {
   sessionLock,
   setSession,
 } from "@/lib/session";
+import { contentRequest } from "@/lib/content-client";
 import {
   clearSessionAction,
   logoutAction,
@@ -21,113 +22,119 @@ export function createAuthStore() {
   let restoreId = 0;
   let channel: BroadcastChannel | null = null;
 
-  return createStore<Auth>()((set, get) => ({
-    user: null,
-    loading: true,
-    error: "",
-
-    async restore() {
-      const id = ++restoreId;
-      set({ loading: true, error: "" });
-      try {
-        await refreshSession();
-        const user = await getCurrentUser(authenticatedRequest);
-        if (id === restoreId) set({ user });
-      } catch (failure) {
-        if (id !== restoreId) return;
-        if (failure instanceof ApiError && failure.status === 401) {
-          clearSession();
-          set({ user: null });
-        } else set({ error: errorMessage(failure) });
-      } finally {
-        if (id === restoreId) set({ loading: false });
-      }
-    },
-
-    async login(form) {
-      ++restoreId;
-      await sessionLock(async () => {
-        const result = await submitAuthAction("login", form);
-        if (!result.data) throw new ApiError(result.error, result.status);
-        clearSession();
-        setSession(result.data);
-        set({ user: await getCurrentUser(authenticatedRequest) });
-      });
-      set({ loading: false, error: "" });
-      channel?.postMessage("login");
-    },
-
-    async logout() {
-      await sessionLock(async () => {
-        const result = await logoutAction();
-        if (result.error) throw new ApiError(result.error, result.status);
-      });
-      await get().endSession();
-    },
-
-    async changePassword(currentPassword, newPassword) {
-      // Refresh can acquire its own session lock before sending this request.
-      // An incorrect current password is also HTTP 401; keep the session intact.
-      await authenticatedRequest(
-        "/auth/change-password",
-        "POST",
-        {
-          body: JSON.stringify({ currentPassword, newPassword }),
-        },
-        false,
-      );
-      await get().endSession();
-    },
-
-    async endSession() {
-      try {
-        await clearSessionAction();
-      } finally {
-        ++restoreId;
-        const userId = get().user?.id;
-        clearSession();
-        set({ user: null, loading: false, error: "" });
+  return createStore<Auth>()((set, get) => {
+    function request(sender: ApiRequest): ApiRequest {
+      return async (route, method, options) => {
         try {
-          for (const key of Object.keys(localStorage))
-            if (key.startsWith(`bloghub-recovery:${userId}:`))
-              localStorage.removeItem(key);
-        } catch {
-          /* Storage can be unavailable. */
-        }
-        channel?.postMessage("logout");
-      }
-    },
-
-    async api<T>(path: string, method = "GET", options?: RequestInit): Promise<T> {
-      try {
-        return await authenticatedRequest<T>(path, method, options);
-      } catch (failure) {
-        if (failure instanceof ApiError && failure.status === 401) {
-          clearSession();
-          set({ user: null });
-        }
-        throw failure;
-      }
-    },
-
-    initialize() {
-      void get().restore();
-      if (typeof BroadcastChannel !== "undefined") {
-        channel = new BroadcastChannel("bloghub-session");
-        channel.onmessage = (event) => {
-          if (event.data === "logout") {
-            ++restoreId;
+          return await sender(route, method, options);
+        } catch (failure) {
+          if (failure instanceof ApiError && failure.status === 401) {
             clearSession();
-            set({ user: null, loading: false, error: "" });
+            set({ user: null });
           }
-          if (event.data === "login") void get().restore();
-        };
-      }
-      return () => {
-        ++restoreId;
-        channel?.close();
-        channel = null;
+          throw failure;
+        }
       };
-    },
-  }));
+    }
+    return {
+      user: null,
+      loading: true,
+      error: "",
+
+      async restore() {
+        const id = ++restoreId;
+        set({ loading: true, error: "" });
+        try {
+          await refreshSession();
+          const user = await getCurrentUser(authenticatedRequest);
+          if (id === restoreId) set({ user });
+        } catch (failure) {
+          if (id !== restoreId) return;
+          if (failure instanceof ApiError && failure.status === 401) {
+            clearSession();
+            set({ user: null });
+          } else set({ error: errorMessage(failure) });
+        } finally {
+          if (id === restoreId) set({ loading: false });
+        }
+      },
+
+      async login(form) {
+        ++restoreId;
+        await sessionLock(async () => {
+          const result = await submitAuthAction("login", form);
+          if (!result.data) throw new ApiError(result.error, result.status);
+          clearSession();
+          setSession(result.data);
+          set({ user: await getCurrentUser(authenticatedRequest) });
+        });
+        set({ loading: false, error: "" });
+        channel?.postMessage("login");
+      },
+
+      async logout() {
+        await sessionLock(async () => {
+          const result = await logoutAction();
+          if (result.error) throw new ApiError(result.error, result.status);
+        });
+        await get().endSession();
+      },
+
+      async changePassword(currentPassword, newPassword) {
+        // Refresh can acquire its own session lock before sending this request.
+        // An incorrect current password is also HTTP 401; keep the session intact.
+        await authenticatedRequest(
+          "/auth/change-password",
+          "POST",
+          {
+            body: JSON.stringify({ currentPassword, newPassword }),
+          },
+          false,
+        );
+        await get().endSession();
+      },
+
+      async endSession() {
+        try {
+          await clearSessionAction();
+        } finally {
+          ++restoreId;
+          const userId = get().user?.id;
+          clearSession();
+          set({ user: null, loading: false, error: "" });
+          try {
+            for (const key of Object.keys(localStorage))
+              if (key.startsWith(`bloghub-recovery:${userId}:`))
+                localStorage.removeItem(key);
+          } catch {
+            /* Storage can be unavailable. */
+          }
+          channel?.postMessage("logout");
+        }
+      },
+
+      api: request(authenticatedRequest),
+      contentApi: request(contentRequest),
+
+      initialize() {
+        void get().restore();
+        if (typeof BroadcastChannel !== "undefined") {
+          channel = new BroadcastChannel("bloghub-session");
+          channel.onmessage = (event) => {
+            if (event.data === "logout") {
+              ++restoreId;
+              clearSession();
+              set({ user: null, loading: false, error: "" });
+            }
+            if (event.data === "login") void get().restore();
+          };
+        }
+        return () => {
+          ++restoreId;
+          channel?.close();
+          channel = null;
+        };
+      },
+    };
+  });
 }

@@ -11,7 +11,7 @@ This document describes the current frontend implementation. The frontend is a N
 | Tailwind CSS 4 and global CSS | Styling, layout, responsive behavior, and theme variables |
 | Tiptap | Visual editing with Markdown content |
 | React Markdown and remark-gfm | Article and editor preview rendering |
-| Zustand | Shared authentication state and actions |
+| Zustand | Shared authentication, dashboard blogs, categories, tags, and their actions |
 | Sonner | Toast notifications for authentication and workspace actions |
 | Vitest | Component and application logic tests |
 | Playwright | Browser flows against an isolated mock API |
@@ -57,7 +57,9 @@ blog_frontend/
 │   ├── session.ts            # In-memory access token and refresh coordination
 │   └── editor.ts             # Post validation and Markdown editing helpers
 ├── store/
-│   └── auth-store.ts         # Zustand account state and actions
+│   ├── auth-store.ts         # Zustand account state and actions
+│   ├── blog-store.ts         # Account-scoped lists, details, and blog actions
+│   └── taxonomy-store.ts     # Shared categories, tags, and taxonomy actions
 ├── type/
 │   └── type.ts               # Application data, state, and component prop types
 ├── tests/
@@ -96,12 +98,12 @@ Category management groups tags under expandable category rows. Authors see cate
 
 ## Layout and components
 
-The root layout loads local fonts and global styles, supplies metadata, and adds a keyboard skip link. `AuthProvider` surrounds the shared Header, route content, and Footer. It creates a Zustand store for that component tree and starts session restoration after mounting.
+The root layout loads local fonts and global styles, supplies metadata, and adds a keyboard skip link. `AuthProvider` surrounds the shared Header, route content, and Footer. It creates authentication, blog, and taxonomy Zustand stores for that component tree and starts session restoration after mounting.
 
 | Component | Responsibility |
 | --- | --- |
 | `header.tsx` / `footer.tsx` | Shared site navigation and footer |
-| `auth-provider.tsx` | Provides the Zustand store, starts session synchronization, and exposes `useAuth` |
+| `auth-provider.tsx` | Provides the Zustand stores, synchronizes account resets, and exposes `useAuth`, `useBlogStore`, and `useTaxonomyStore` |
 | `auth-form.tsx` | Interactive login and registration forms |
 | `dashboard-shell.tsx` | Session guard, workspace navigation, and bottom sign-out button |
 | `search-filters.tsx` | URL-backed search and category/tag/author filters |
@@ -129,7 +131,7 @@ The shared request helper uses `cache: "no-store"` to keep private requests fres
 
 [`lib/api.ts`](lib/api.ts) is shared by server and browser code. It contains query-string helpers, image URL resolution, error formatting, and the shared `apiRequest(route, method = "GET", options)` function. The optional options argument carries bodies and headers. Application types live in [`type/type.ts`](type/type.ts) and are imported with `import type`, including API models, request inputs, authentication state, editor recovery data, and component props. All backend endpoint paths and payload construction live here in exported functions such as `getBlogs`, `saveBlog`, `getCategories`, and `saveTaxonomy`. Pages and components call these functions instead of constructing requests. Protected functions receive the authenticated `api` function from `AuthProvider`, preserving token refresh and session handling without importing browser session state into the shared module.
 
-For example, a Server Component calls `await getBlogs({ page: 1, limit: 9 })`. A protected Client Component gets `api` from `useAuth()` and calls `await getCategories(api)` or `await saveBlog(input, id, imageFile, api)`. Add future backend endpoints to this module and reuse `apiRequest` for transport and error handling.
+For example, a Server Component calls `await getCachedBlogs({ page: 1, limit: 9 })` from `lib/content.ts`. Dashboard Client Components select `api` for reads and `contentApi` for writes from `useAuth(selector)`, then pass the appropriate sender to store actions. `lib/session.ts` handles tokens and refresh/retry for either transport; `lib/content-client.ts` explicitly forwards writes to the content Server Action. Authentication does not inspect resource routes. The blog and taxonomy stores reuse the exported API functions. Add future backend endpoints to this module and reuse `apiRequest` for transport and error handling.
 
 Requests use `NEXT_PUBLIC_API_BASE_URL`, defaulting to `http://localhost:5300/api/v1`. The request helper applies a timeout, parses JSON responses, handles empty responses, and turns backend failures into `ApiError` objects with a status and readable message.
 
@@ -139,11 +141,15 @@ The backend remains the source of truth for validation and permissions. Frontend
 
 ## State management
 
-[`store/auth-store.ts`](store/auth-store.ts) uses Zustand for shared account state: `user`, `loading`, and `error`, together with login, logout, restore, and authenticated request actions. Existing components access it through `useAuth()` in `auth-provider.tsx`. The small React context only provides the store instance; Zustand manages state and subscriptions.
+[`store/auth-store.ts`](store/auth-store.ts) uses Zustand for shared account state: `user`, `loading`, and `error`, together with login, logout, restore, and authenticated request actions. Existing components access selected fields through `useAuth(selector)` in `auth-provider.tsx`. The small React context only provides the store instance; Zustand manages state and subscriptions.
 
 The provider creates a fresh store with the same initial values during server and browser rendering, following [Zustand’s Next.js guidance](https://zustand.docs.pmnd.rs/learn/guides/nextjs). Authentication work starts in an effect. There is no persisted Zustand state; access tokens stay in session memory and the refresh token stays in the HttpOnly cookie.
 
-Form inputs, dialogs, story lists, taxonomy data, and editor drafts remain local component state. URL filters and the existing theme and draft recovery storage retain their current responsibilities.
+Dashboard story lists and loaded details live in `store/blog-store.ts`; categories and tags live in `store/taxonomy-store.ts`. Components select shared data and call store actions, which reuse the existing API functions and content Server Actions. Lists are keyed by author/admin view, status, and page, and details by view and ID. Fresh results are reused for 60 seconds and concurrent readers share requests. Successful writes invalidate affected data; blog saves retain the returned owner detail to avoid an extra read. Blog changes invalidate only the changed detail and affected status/view lists. Taxonomy edits/deletions refresh both arrays and invalidate cached blogs referencing the changed resource, including category deletion cascades; creation preserves existing blog caches. Detail caches store only successful data and timestamps; the editor owns its loading/errors.
+
+The provider resets content stores whenever account ID or role changes, including logout and session loss. Pending-request identity checks in the blog store and request generations in the taxonomy store discard old read responses after reset or invalidation; mutation session checks prevent old account writes from changing current store state. Store instances are created per provider rather than shared as server module singletons. The stores are not persisted.
+
+Form inputs, dialogs, selected images, and editor drafts remain local component state. URL filters and the existing theme and draft recovery storage retain their current responsibilities. Public pages keep their server-rendered Next.js cache. Other-user content changes are picked up on a subsequent load after expiry or page reload.
 
 ## Authentication and session lifecycle
 
@@ -185,7 +191,7 @@ Save and publish create or update stories through the API. Publishing and unpubl
 
 Recovery copies are stored locally by user and post under `bloghub-recovery:<userId>:<postId-or-new>`. They include draft fields, a save timestamp, and the server version timestamp. The editor offers Restore or Discard and highlights when the server story has changed since the recovery copy was made.
 
-Recovery updates after a short delay and before saving or leaving. It is not backend autosave. Successful saving and explicit logout clear recovery copies. Unsaved-change warnings cover marked in-app links, sign-out, closing/reloading, and history navigation where the browser supports the Navigation API.
+The `useDraftRecovery` hook in `lib/use-draft-recovery.ts` owns browser storage, recovery parsing, delayed saves, and navigation warnings. Recovery updates after a short delay and before saving or leaving. It is not backend autosave. Successful saving and explicit logout clear recovery copies. Unsaved-change warnings cover marked in-app links, sign-out, closing/reloading, and history navigation where the browser supports the Navigation API.
 
 ## Device cover images
 

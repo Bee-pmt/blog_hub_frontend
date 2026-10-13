@@ -1,23 +1,36 @@
 "use client";
 import type { Category, Tag, TaxonomyKind, TaxonomySelection } from "@/type/type";
+import { useShallow } from "zustand/react/shallow";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  errorMessage,
-  saveTaxonomy,
-  deleteTaxonomy,
-} from "@/lib/api";
-import { useAuth } from "./auth-provider";
+import { errorMessage } from "@/lib/api";
+import { useAuth, useTaxonomyStore } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
-import { getTaxonomyAction } from "@/action/content";
 export default function TaxonomyManager() {
-  const { user, api } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const user = useAuth((state) => state.user);
+  const contentApi = useAuth((state) => state.contentApi);
+  const {
+    categories,
+    tags,
+    loading,
+    error: loadError,
+    load,
+    save: saveTaxonomy,
+    remove: deleteTaxonomy,
+  } = useTaxonomyStore(
+    useShallow((state) => ({
+      categories: state.categories,
+      tags: state.tags,
+      loading: state.loading,
+      error: state.error,
+      load: state.load,
+      save: state.save,
+      remove: state.remove,
+    })),
+  );
+  const [mutationError, setError] = useState("");
+  const error = mutationError || loadError;
   const [busy, setBusy] = useState(false);
-  const [revision, setRevision] = useState(0);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const [editing, setEditing] = useState<TaxonomySelection | null>(null);
   const [editError, setEditError] = useState("");
@@ -38,28 +51,8 @@ export default function TaxonomyManager() {
     return () => dialog?.close();
   }, [editing]);
   useEffect(() => {
-    // Loading state belongs to this remote request, including filter changes and retries.
-    let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    getTaxonomyAction()
-      .then((result) => {
-        if (!result.ok) throw new Error(result.error);
-        if (active) {
-          setCategories(result.data.categories);
-          setTags(result.data.tags);
-        }
-      })
-      .catch((failure) => {
-        if (active) setError(errorMessage(failure));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, revision]);
+    void load().catch(() => { /* The store exposes the loading error. */ });
+  }, [load]);
   async function save(
     event: React.FormEvent<HTMLFormElement>,
     kind: TaxonomyKind,
@@ -88,7 +81,7 @@ export default function TaxonomyManager() {
             ? { categoryId: String(values.get("categoryId") || "") }
             : {}),
         },
-        api,
+        contentApi,
         id,
       );
       if (!id) form.reset();
@@ -98,7 +91,6 @@ export default function TaxonomyManager() {
           ? "Name updated. Discovery links now use the new slug."
           : "Created successfully.",
       );
-      setRevision((value) => value + 1);
     } catch (failure) {
       if (id) setEditError(errorMessage(failure));
       else setError(errorMessage(failure));
@@ -207,7 +199,7 @@ export default function TaxonomyManager() {
             className="text-link"
             onClick={() => {
               setError("");
-              setRevision((value) => value + 1);
+              void load(true).catch(() => {});
             }}
           >
             Retry loading
@@ -340,9 +332,8 @@ export default function TaxonomyManager() {
             setBusy(true);
             setError("");
             try {
-              await deleteTaxonomy(deleting.kind, deleting.item.id, api);
+              await deleteTaxonomy(deleting.kind, deleting.item.id, contentApi);
               toast.success("Deleted successfully.");
-              setRevision((value) => value + 1);
             } catch (failure) {
               setError(errorMessage(failure));
               toast.error(errorMessage(failure));

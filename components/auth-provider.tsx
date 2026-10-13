@@ -1,27 +1,81 @@
 "use client";
 
-import type { AuthStore, ChildrenProps } from "@/type/type";
+import type { Auth, AuthStore, ChildrenProps } from "@/type/type";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import Link from "next/link";
 import { createAuthStore } from "@/store/auth-store";
+import { createBlogStore, type BlogState } from "@/store/blog-store";
+import {
+  createTaxonomyStore,
+  type TaxonomyState,
+} from "@/store/taxonomy-store";
 
 const AuthContext = createContext<AuthStore | null>(null);
+const ContentContext = createContext<{
+  blogs: ReturnType<typeof createBlogStore>;
+  taxonomy: ReturnType<typeof createTaxonomyStore>;
+} | null>(null);
 
-export function useAuth() {
+export function useBlogStore<T>(selector: (state: BlogState) => T) {
+  const stores = useContext(ContentContext);
+  if (!stores) throw new Error("AuthProvider is required");
+  return useStore(stores.blogs, selector);
+}
+
+export function useTaxonomyStore<T>(selector: (state: TaxonomyState) => T) {
+  const stores = useContext(ContentContext);
+  if (!stores) throw new Error("AuthProvider is required");
+  return useStore(stores.taxonomy, selector);
+}
+
+export function useAuth<T>(selector: (state: Auth) => T) {
   const store = useContext(AuthContext);
   if (!store) throw new Error("AuthProvider is required");
-  return useStore(store);
+  return useStore(store, selector);
 }
 
 export default function AuthProvider({ children }: ChildrenProps) {
   const [store] = useState(createAuthStore);
-  useEffect(() => store.getState().initialize(), [store]);
-  return <AuthContext.Provider value={store}>{children}</AuthContext.Provider>;
+  const [content] = useState(() => {
+    const blogs = createBlogStore(() => store.getState().user?.id);
+    return {
+      blogs,
+      taxonomy: createTaxonomyStore((kind, id) =>
+        blogs.getState().invalidateTaxonomy(kind, id),
+      ),
+    };
+  });
+  useEffect(() => {
+    // Clear private data synchronously when authentication changes, including other tabs.
+    const unsubscribe = store.subscribe((state, previous) => {
+      if (
+        state.user?.id !== previous.user?.id ||
+        state.user?.role !== previous.user?.role
+      ) {
+        content.blogs.getState().reset();
+        content.taxonomy.getState().reset();
+      }
+    });
+    const dispose = store.getState().initialize();
+    return () => {
+      dispose();
+      unsubscribe();
+      content.blogs.getState().reset();
+      content.taxonomy.getState().reset();
+    };
+  }, [store, content]);
+  return (
+    <AuthContext.Provider value={store}>
+      <ContentContext.Provider value={content}>
+        {children}
+      </ContentContext.Provider>
+    </AuthContext.Provider>
+  );
 }
 
 export function AccountNav() {
-  const { user } = useAuth();
+  const user = useAuth((state) => state.user);
   if (!user)
     return (
       <Link

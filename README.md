@@ -79,7 +79,7 @@ Admins can open **Users · Admin** in the workspace sidebar (`/dashboard/admin/u
 
 Zustand continues to manage authentication. Public story lists and articles use exported functions in `lib/content.ts`; categories and tags share a cached taxonomy function, also available to workspace components through `getTaxonomyAction`. Next.js caches results by function arguments, so filters and pagination remain independent.
 
-Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `action/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts, account information, and admin lists remain uncached. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
+Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `action/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts and dashboard blog lists are never placed in the shared Next.js server cache. They are reused in the account-scoped Zustand store; account information and user management continue to load through authentication. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
 
 ### Simple API usage
 
@@ -93,4 +93,27 @@ await apiRequest("/auth/register", "POST", {
 });
 ```
 
-Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content.ts` to reuse Next.js cached results. Protected functions receive the Zustand authenticated `api` sender, which uses the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.
+Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content.ts` to reuse Next.js cached results. Private reads receive the Zustand authenticated `api` sender. Content writes explicitly receive `contentApi`, which uses a Server Action. Both use the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.
+
+## Zustand content stores
+
+The dashboard shares blog data through `store/blog-store.ts` and category/tag data through `store/taxonomy-store.ts`. `AuthProvider` creates one instance of each per app tree, alongside authentication. These stores keep loaded data and fetch/write actions in one place. List and taxonomy loading/errors live in the stores; the editor owns its detail loading/error state.
+
+This avoids fetching the same fresh data whenever a component mounts. For example, **Categories & tags** and **Write a story** reuse the same category/tag arrays. **My stories** can reuse its list when you return from the editor. Requests started at the same time share one promise. A saved blog's returned detail is reused when reopening the editor.
+
+Blog lists are separated by author/admin view, status, and page. Data is fresh for 60 seconds and is fetched again on the next load after that. Successful blog changes invalidate the affected author/admin status lists and that blog’s old detail. Unrelated details and status lists are retained. Category/tag edits and deletions reload taxonomy and invalidate cached blogs referencing the changed category or tag; creating taxonomy leaves existing blog caches intact. The public Next.js cache still expires through the existing Server Actions.
+
+Stores live in browser memory. Reloading the page creates fresh stores. Logout, account changes, role changes, and session loss clear their data, and old requests cannot repopulate a cleared store. Form inputs, selected images, confirmation dialogs, and browser draft recovery keep their existing local behavior. Content changes in other tabs or by other users are picked up by a subsequent load after expiry or a page reload; there is no live update subscription.
+
+```tsx
+const categories = useTaxonomyStore((state) => state.categories);
+const loadTaxonomy = useTaxonomyStore((state) => state.load);
+
+useEffect(() => {
+  void loadTaxonomy().catch(() => {}); // Fetch once; reuse while fresh.
+}, [loadTaxonomy]);
+```
+
+The selector subscribes the component to the data it needs. Calling a store action updates every subscribed component automatically.
+
+Browser recovery, storage access, and unsaved-change navigation warnings live in `lib/use-draft-recovery.ts`. The editor calls its read/save/clear functions rather than duplicating browser storage logic. Components use focused Zustand selectors; grouped selections use `useShallow` to avoid updates from unrelated store fields.

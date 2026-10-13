@@ -611,3 +611,71 @@ test("public reads reuse Next cache and taxonomy writes invalidate it", async ({
   expect(count(third, listPath)).toBeGreaterThan(count(second, listPath));
   expect(count(third, "/api/v1/categories")).toBeGreaterThan(count(second, "/api/v1/categories"));
 });
+
+test("Zustand reuses dashboard lists, details, and taxonomy during navigation", async ({ page, request }) => {
+  const requests: { url: string; action: boolean }[] = [];
+  page.on("request", (request) => requests.push({
+    url: request.url(), action: !!request.headers()["next-action"],
+  }));
+  await login(page);
+  const story = page.getByRole("link", { name: "Thoughtful story 1", exact: true });
+  await expect(story).toBeVisible();
+  const listReads = () => requests.filter((entry) => entry.url.includes(`${api}/me/blogs?`)).length;
+  const initialReads = listReads();
+  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toBeVisible();
+  const taxonomyActions = requests.filter((entry) => entry.action).length;
+  await page.getByRole("link", { name: "Write a story", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Category", exact: true }).locator("option")).toHaveText(["Select a category", "Ideas", "Life"]);
+  expect(requests.filter((entry) => entry.action)).toHaveLength(taxonomyActions);
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(story).toBeVisible();
+  expect(listReads()).toBe(initialReads);
+  await story.click();
+  await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
+  const detailReads = () => requests.filter((entry) => entry.url === `${api}/me/blogs/story-1`).length;
+  expect(detailReads()).toBe(1);
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await story.click();
+  await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
+  expect(detailReads()).toBe(1);
+  await page.getByRole("textbox", { name: "Story title", exact: true }).fill("Updated through Zustand");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Updated through Zustand", exact: true })).toBeVisible();
+  expect(listReads()).toBeGreaterThan(initialReads);
+  // The shared taxonomy write also invalidates already loaded blog labels.
+  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit category", exact: true });
+  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Shared Ideas");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.locator(".manage-row:visible").filter({ has: page.getByRole("link", { name: "Updated through Zustand", exact: true }) })).toContainText("Shared Ideas");
+  const log = await (await request.get(`${api}/__requests`)).json();
+  expect(log.some((entry: { method: string; path: string }) => entry.method === "PATCH" && entry.path === "/api/v1/categories/cat-1")).toBe(true);
+});
+
+test("Zustand clears private lists when signing out and switching accounts", async ({ page }) => {
+  await login(page);
+  await expect(page.getByRole("link", { name: "Thoughtful story 1", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Thoughtful story 1", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await page.getByLabel("Email", { exact: true }).fill("other@test.local");
+  await page.getByLabel("Password", { exact: true }).fill("password123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
+  // Sign-in returns to the old editor URL; it must not reuse the previous owner's detail.
+  await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Thoughtful story 2", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Thoughtful story 1", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toHaveCount(0);
+});

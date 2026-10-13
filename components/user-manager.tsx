@@ -1,4 +1,5 @@
 "use client";
+import { useShallow } from "zustand/react/shallow";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -13,7 +14,13 @@ import { useAuth } from "./auth-provider";
 import ConfirmDialog from "./confirm-dialog";
 
 export default function UserManager() {
-  const { api, user, restore } = useAuth();
+  const { api, user, restore } = useAuth(
+    useShallow((state) => ({
+      api: state.api,
+      user: state.user,
+      restore: state.restore,
+    })),
+  );
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
