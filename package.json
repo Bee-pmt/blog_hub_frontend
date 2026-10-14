@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.13.0",
     "@tiptap/extension-image": "^3.31.4",
     "@tiptap/markdown": "^3.31.4",
     "@tiptap/pm": "^3.31.4",
@@ -20,10 +21,11 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-hook-form": "^7.90.0",
     "react-markdown": "^10.1.0",
+    "react-redux": "^9.3.0",
     "remark-gfm": "^4.0.1",
-    "sonner": "^2.0.8",
-    "zustand": "^5.0.15"
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

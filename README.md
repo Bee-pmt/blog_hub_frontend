@@ -16,9 +16,9 @@ npm run dev
 
 Open http://localhost:3000. The default public API URL is `http://localhost:5300/api/v1`. Set `NEXT_PUBLIC_API_BASE_URL` in `.env.local` when needed, then restart Next.js. This value is compiled into browser code; never put a secret in it.
 
-In the sibling backend repository, configure its database and authentication environment and run `npm run start:dev`. Its current TypeORM configuration uses PostgreSQL port **5433**. The backend requires `JWT_SECRET` of at least 32 bytes. `FRONTEND_ORIGINS` defaults to `http://localhost:3000`; alternate frontend origins must be explicitly included. Swagger is at http://localhost:5300/api/docs. Production cookies require HTTPS.
+In the sibling backend repository, configure its database and authentication environment and run `npm run start:dev`. This laptop’s dedicated PostgreSQL instance uses port **5433**; the backend reads the port from its local `.env`. The backend requires `JWT_SECRET` of at least 32 bytes. `FRONTEND_ORIGINS` defaults to `http://localhost:3000`; alternate frontend origins must be explicitly included. Swagger is at http://localhost:5300/api/docs. Production cookies require HTTPS.
 
-Sign-in and registration forms call Server Actions in `actions/auth.ts`. Next.js stores the backend refresh token in a frontend HttpOnly cookie and forwards it for server-side refresh and sign-out. The access token stays in browser memory for authenticated API calls. The Next.js server must be able to reach `NEXT_PUBLIC_API_BASE_URL`. Existing sessions created before this change may require signing in again.
+Sign-in and registration forms call Server Actions in `src/modules/auth/actions.ts`. Next.js stores the backend refresh token in a frontend HttpOnly cookie and forwards it for server-side refresh and sign-out. The access token stays in browser memory for authenticated API calls. The Next.js server must be able to reach `NEXT_PUBLIC_API_BASE_URL`. Existing sessions created before this change may require signing in again.
 
 The backend uses schema synchronization. No backend startup, seeding, reset, admin creation, or schema change is performed by this frontend. Use an existing admin account for admin views; public registration creates authors.
 
@@ -75,61 +75,22 @@ The sign-in page links to `/forgot-password`. Enter the registered email, then i
 
 Admins can open **Users · Admin** in the workspace sidebar (`/dashboard/admin/users`). Search by name or email; results show account name/email, registration date, role, and status, with 10 users per page and Previous/Next controls. Role and account-access changes require confirmation. Deactivation preserves stories and revokes sessions; reactivation requires a fresh login. The backend prevents self-deactivation and removing the last active admin, including concurrent requests. User creation and deletion are not included. Restart the backend to load the new role endpoint.
 
-## Content caching
+## Module architecture
 
-Zustand continues to manage authentication. Public story lists and articles use exported functions in `lib/content-cache.ts`; categories and tags share a cached taxonomy function, also available to workspace components through `getTaxonomyAction`. Next.js caches results by function arguments, so filters and pagination remain independent.
+Application code lives under `src/`, with feature modules in `src/modules/`. See [architecture](docs/architecture.md) for the complete layout and data flow.
 
-Blog saves, uploads, publishing, moderation, deletion, and taxonomy changes go through `actions/content.ts` with the current access token. The backend still verifies permissions. Successful writes immediately expire the relevant cache tags. Private drafts and dashboard blog lists are never placed in the shared Next.js server cache. They are reused in the account-scoped Zustand store; account information and user management continue to load through authentication. Public entries revalidate after 60 seconds and expire after 120 seconds as a fallback for changes made directly to the backend. Already open pages need navigation or refresh to show changes. No new dependency is required.
+Each module registers routes and sidebar links in `manifest.ts`. `src/lib/registry.ts` collects modules and `src/moduleRegistry.tsx` resolves them through the optional catch-all page in `src/app/[[...segments]]/page.tsx`. Existing BlogHub URLs and designs are preserved. Public pages remain server-rendered with Next.js caching.
 
-### Simple API usage
+Redux Toolkit replaces Zustand for account state. RTK Query services in each module's `store/services/` expose generated query and mutation hooks. They handle loading, errors, request sharing, resource invalidation, and dashboard caching. Account changes clear private caches. React Hook Form manages form values; shared UI lives in `src/modules/base/components/`.
 
-`lib/api.ts` uses `apiRequest(route, method, options)`. The method defaults to `GET`; options are only needed for a body or headers:
-
-```ts
-const categories = await apiRequest<Category[]>("/categories");
-await apiRequest("/blogs/story-id", "DELETE");
-await apiRequest("/auth/register", "POST", {
-  body: JSON.stringify({ displayName, email, password }),
-});
-```
-
-Prefer the exported feature functions in components. Server pages use `getCachedBlogs`, `getCachedBlog`, and `getCachedTaxonomy` from `lib/content-cache.ts` to reuse Next.js cached results. Private reads receive the Zustand authenticated `api` sender. Content writes explicitly receive `contentApi`, which uses a Server Action. Both use the same route/method/options format. Error handling, refresh cookies, and file uploads are preserved.
-
-## Zustand content stores
-
-The dashboard shares blog data through `features/blogs/blog-store.ts` and category/tag data through `features/taxonomy/taxonomy-store.ts`. `AuthProvider` creates one instance of each per app tree, alongside authentication. These stores keep loaded data and fetch/write actions in one place. List and taxonomy loading/errors live in the stores; the editor owns its detail loading/error state.
-
-This avoids fetching the same fresh data whenever a component mounts. For example, **Categories & tags** and **Write a story** reuse the same category/tag arrays. **My stories** can reuse its list when you return from the editor. Requests started at the same time share one promise. A saved blog's returned detail is reused when reopening the editor.
-
-Blog lists are separated by author/admin view, status, and page. Data is fresh for 60 seconds and is fetched again on the next load after that. Successful blog changes invalidate the affected author/admin status lists and that blog’s old detail. Unrelated details and status lists are retained. Category/tag edits and deletions reload taxonomy and invalidate cached blogs referencing the changed category or tag; creating taxonomy leaves existing blog caches intact. The public Next.js cache still expires through the existing Server Actions.
-
-Stores live in browser memory. Reloading the page creates fresh stores. Logout, account changes, role changes, and session loss clear their data, and old requests cannot repopulate a cleared store. Form inputs, selected images, confirmation dialogs, and browser draft recovery keep their existing local behavior. Content changes in other tabs or by other users are picked up by a subsequent load after expiry or a page reload; there is no live update subscription.
+Authentication cookies, refresh coordination, Server Actions, Markdown handling, uploads, and browser draft recovery retain their existing behavior. Blog/taxonomy mutations still invalidate the Next.js public caches after the backend accepts a write.
 
 ```tsx
-const categories = useTaxonomyStore((state) => state.categories);
-const loadTaxonomy = useTaxonomyStore((state) => state.load);
-
-useEffect(() => {
-  void loadTaxonomy().catch(() => {}); // Fetch once; reuse while fresh.
-}, [loadTaxonomy]);
+const { data, isLoading, error } = useGetManagedBlogsQuery({
+  admin: false, status: "", page: 1,
+});
+const [deleteBlog] = useDeleteBlogMutation();
+await deleteBlog(id).unwrap();
 ```
 
-The selector subscribes the component to the data it needs. Calling a store action updates every subscribed component automatically.
-
-Browser recovery, storage access, and unsaved-change navigation warnings live in `features/blogs/use-draft-recovery.ts`. The editor calls its read/save/clear functions rather than duplicating browser storage logic. Components use focused Zustand selectors; grouped selections use `useShallow` to avoid updates from unrelated store fields.
-
-## Frontend folder structure
-
-- `app/`: Next.js routes and layouts. The small header/footer markup lives in the root layout.
-- `features/auth/`: authentication forms, provider, and Zustand auth store.
-- `features/blogs/`: story lists, editor, rendering, validation, recovery hook, and blog store.
-- `features/taxonomy/`: category/tag management and store.
-- `features/users/`: admin user management.
-- `components/`: UI shared across features: dashboard shell, confirmation dialog, and theme switch.
-- `actions/`: authentication and content Server Actions.
-- `lib/`: shared API/session code and explicitly named public `content-cache.ts`.
-- `types/models.ts`: shared models; component-only props stay beside their component.
-- `tests/`: unit tests and browser tests.
-- `docs/`: [current architecture](docs/architecture.md) and [archived first-release plan](docs/archive/frontend-plan.md).
-
-Feature folders contain their related files directly, without extra component/store subfolders or re-export files. Keep Next.js page files in `app/` and configuration files at the repository root.
+There is one source copy. Backend adapters for additional providers and demo tenant permissions are not part of BlogHub.

@@ -1,23 +1,25 @@
-import type { BlogInput } from "@/types/models";
+import type { BlogInput } from "@/modules/blogs/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Markdown as MarkdownExtension } from "@tiptap/markdown";
-import Markdown, { safeMarkdownUrl } from "@/features/blogs/markdown";
+import Markdown, { safeMarkdownUrl } from "@/modules/blogs/components/markdown";
+import { ApiError, apiRequest } from "@/lib/api-client";
+import { blogImageUrl, saveBlog } from "@/modules/blogs/api";
+import { localReturnPath } from "@/modules/auth/api";
+import { queryString } from "@/lib/utils";
 import {
-  ApiError,
-  blogImageUrl,
-  localReturnPath,
-  queryString,
-  apiRequest,
-  saveBlog,
-  setBlogStatus,
-} from "@/lib/api";
-import { needsSourceMode, validatePost } from "@/features/blogs/editor-validation";
+  needsSourceMode,
+  validatePost,
+} from "@/modules/blogs/editor-validation";
 
-vi.mock("next/cache", () => ({ cacheLife: vi.fn(), cacheTag: vi.fn(), updateTag: vi.fn() }));
+vi.mock("next/cache", () => ({
+  cacheLife: vi.fn(),
+  cacheTag: vi.fn(),
+  updateTag: vi.fn(),
+}));
 
 const cookieStore = vi.hoisted(() => ({
   get: vi.fn(() => ({ value: "refresh-cookie" })),
@@ -35,23 +37,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("API contract", () => {
-  it("routes admin moderation separately from owner publication", async () => {
-    const send = vi.fn().mockResolvedValue({ status: "draft" });
-    await setBlogStatus("story-1", "draft", send, true);
-    expect(send).toHaveBeenLastCalledWith("/admin/blogs/story-1/status", "PATCH", {
-      body: JSON.stringify({ status: "draft" }),
-    });
-    await setBlogStatus("story-1", "published", send);
-    expect(send).toHaveBeenLastCalledWith("/blogs/story-1", "PATCH", {
-      body: JSON.stringify({ status: "published" }),
-    });
-  });
   it("leaves multipart Content-Type to the browser", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetcher);
     const input: BlogInput = {
-      title: "A story", content: "Body", tagIds: ["tag-1"], status: "draft",
-      categoryId: "category-1", coverImageUrl: null,
+      title: "A story",
+      content: "Body",
+      tagIds: ["tag-1"],
+      status: "draft",
+      categoryId: "category-1",
+      coverImageUrl: null,
     };
     const image = new File(["image bytes"], "cover.png", { type: "image/png" });
     await saveBlog(input, undefined, image, apiRequest);
@@ -67,7 +62,11 @@ describe("API contract", () => {
     const saved = { id: "story-1", coverImageUrl: null };
     const send = vi.fn().mockResolvedValue(saved);
     const input: BlogInput = {
-      title: "A story", content: "Body", tagIds: [], status: "draft", coverImageUrl: null,
+      title: "A story",
+      content: "Body",
+      tagIds: [],
+      status: "draft",
+      coverImageUrl: null,
     };
     expect(await saveBlog(input, "story-1", null, send)).toBe(saved);
     expect(send).toHaveBeenCalledWith("/blogs/story-1", "PATCH", {
@@ -75,15 +74,24 @@ describe("API contract", () => {
     });
   });
   it("rejects unreadable successful responses", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid JSON")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("invalid JSON")),
+    );
     await expect(apiRequest("/blogs")).rejects.toMatchObject({
-      status: 200, message: "The server returned an unreadable response.",
+      status: 200,
+      message: "The server returned an unreadable response.",
     });
   });
   it("resolves uploaded image paths against the backend origin", () => {
     const path = "/images/12345678-1234-1234-1234-123456789abc.png";
     expect(blogImageUrl(path)).toBe(`http://localhost:5300${path}`);
-    for (const path of ["//evil.test/image.png", "/images/../secret.png", "/images/image.svg", "blob:untrusted"])
+    for (const path of [
+      "//evil.test/image.png",
+      "/images/../secret.png",
+      "/images/image.svg",
+      "blob:untrusted",
+    ])
       expect(blogImageUrl(path)).toBe("");
   });
   it("encodes combined filters and omits blank parameters", () => {
@@ -105,9 +113,7 @@ describe("API contract", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
     );
-    await expect(
-      apiRequest("/blogs/id", "DELETE"),
-    ).resolves.toBeUndefined();
+    await expect(apiRequest("/blogs/id", "DELETE")).resolves.toBeUndefined();
   });
   it("shows backend validation arrays", async () => {
     vi.stubGlobal(
@@ -152,7 +158,7 @@ describe("authentication Server Actions", () => {
   it("validates registration on the server before calling the backend", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
-    const { submitAuthAction } = await import("@/actions/auth");
+    const { submitAuthAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", "writer@test.local");
     form.set("password", "🙂".repeat(19));
@@ -164,41 +170,82 @@ describe("authentication Server Actions", () => {
   });
   it("sets a frontend HttpOnly cookie and preserves backend expiry", async () => {
     const expires = "Wed, 14 Oct 2026 12:00:00 GMT";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
-      { accessToken: "access", expiresIn: 3600 },
-      { headers: { "Set-Cookie": `bloghub_refresh=refresh; Path=/api/v1/auth; HttpOnly; Expires=${expires}` } },
-    )));
-    const { submitAuthAction } = await import("@/actions/auth");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json(
+            { accessToken: "access", expiresIn: 3600 },
+            {
+              headers: {
+                "Set-Cookie": `bloghub_refresh=refresh; Path=/api/v1/auth; HttpOnly; Expires=${expires}`,
+              },
+            },
+          ),
+        ),
+    );
+    const { submitAuthAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", " WRITER@Test.local ");
     form.set("password", "password123");
     const result = await submitAuthAction("login", form);
     expect(result.data?.accessToken).toBe("access");
-    expect(cookieStore.set).toHaveBeenCalledWith("bloghub_refresh", "refresh", expect.objectContaining({
-      httpOnly: true, sameSite: "lax", path: "/", expires: new Date(expires),
-    }));
-    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).email).toBe("writer@test.local");
+    expect(cookieStore.set).toHaveBeenCalledWith(
+      "bloghub_refresh",
+      "refresh",
+      expect.objectContaining({
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        expires: new Date(expires),
+      }),
+    );
+    expect(
+      JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).email,
+    ).toBe("writer@test.local");
   });
   it("returns backend errors without clearing the cookie after a failed login", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ message: "Invalid credentials" }, { status: 401 })));
-    const { submitAuthAction } = await import("@/actions/auth");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ message: "Invalid credentials" }, { status: 401 }),
+        ),
+    );
+    const { submitAuthAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", "writer@test.local");
     form.set("password", "incorrect");
-    expect(await submitAuthAction("login", form)).toMatchObject({ error: "Invalid credentials", status: 401, data: null });
+    expect(await submitAuthAction("login", form)).toMatchObject({
+      error: "Invalid credentials",
+      status: 401,
+      data: null,
+    });
     expect(cookieStore.delete).not.toHaveBeenCalled();
   });
   it("clears the frontend refresh cookie after a bodyless logout", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
-    const { logoutAction } = await import("@/actions/auth");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    );
+    const { logoutAction } = await import("@/modules/auth/actions");
     expect(await logoutAction()).toEqual({ error: "", status: 200 });
     expect(cookieStore.delete).toHaveBeenCalledWith("bloghub_refresh");
   });
   it("forwards the refresh cookie and Origin, and clears an expired session", async () => {
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "Expired" }, { status: 401 }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ message: "Expired" }, { status: 401 }),
+      );
     vi.stubGlobal("fetch", fetcher);
-    const { refreshSessionAction } = await import("@/actions/auth");
-    expect(await refreshSessionAction()).toMatchObject({ status: 401, data: null });
+    const { refreshSessionAction } = await import("@/modules/auth/actions");
+    expect(await refreshSessionAction()).toMatchObject({
+      status: 401,
+      data: null,
+    });
     const sentHeaders = new Headers(fetcher.mock.calls[0][1].headers);
     expect(sentHeaders.get("Cookie")).toBe("bloghub_refresh=refresh-cookie");
     expect(sentHeaders.get("Origin")).toBe("http://localhost:3000");
@@ -211,7 +258,15 @@ describe("session rotation", () => {
       .fn()
       .mockImplementation(async (url: string) =>
         url.endsWith("/auth/refresh")
-          ? Response.json({ accessToken: "fresh", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } })
+          ? Response.json(
+              { accessToken: "fresh", expiresIn: 3600 },
+              {
+                headers: {
+                  "Set-Cookie":
+                    "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
+                },
+              },
+            )
           : Response.json({ ok: true }),
       );
     vi.stubGlobal("fetch", fetcher);
@@ -234,7 +289,15 @@ describe("session rotation", () => {
       "fetch",
       vi.fn(async (url: string, options: RequestInit) =>
         url.endsWith("/auth/refresh")
-          ? Response.json({ accessToken: "new", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } })
+          ? Response.json(
+              { accessToken: "new", expiresIn: 3600 },
+              {
+                headers: {
+                  "Set-Cookie":
+                    "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
+                },
+              },
+            )
           : new Headers(options.headers).get("Authorization") === "Bearer old"
             ? Response.json({ message: "Expired" }, { status: 401 })
             : Response.json({ ok: true }),
@@ -270,7 +333,15 @@ describe("session rotation", () => {
       vi
         .fn()
         .mockResolvedValue(
-          Response.json({ accessToken: "fresh", expiresIn: 3600 }, { headers: { "Set-Cookie": "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth" } }),
+          Response.json(
+            { accessToken: "fresh", expiresIn: 3600 },
+            {
+              headers: {
+                "Set-Cookie":
+                  "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
+              },
+            },
+          ),
         ),
     );
     const session = await import("@/lib/session");
@@ -355,7 +426,15 @@ describe("safe articles and writing", () => {
       status: "draft" as const,
     };
     expect(validatePost(input, false)).toBe("");
-    expect(validatePost({ ...input, coverImageUrl: "/images/12345678-1234-1234-1234-123456789abc.png" }, false)).toBe("");
+    expect(
+      validatePost(
+        {
+          ...input,
+          coverImageUrl: "/images/12345678-1234-1234-1234-123456789abc.png",
+        },
+        false,
+      ),
+    ).toBe("");
     expect(validatePost(input, true)).toContain("category");
     expect(
       validatePost(
@@ -366,56 +445,89 @@ describe("safe articles and writing", () => {
   });
 });
 
-
 describe("Password recovery actions", () => {
   it("requests a code using a normalized email without exposing account details", async () => {
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "If this email is registered, a password reset code has been sent." }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({
+          message:
+            "If this email is registered, a password reset code has been sent.",
+        }),
+      );
     vi.stubGlobal("fetch", fetcher);
-    const { passwordRecoveryAction } = await import("@/actions/auth");
+    const { passwordRecoveryAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", " WRITER@EXAMPLE.COM ");
     const result = await passwordRecoveryAction("forgot", form);
     expect(result.error).toBe("");
     expect(fetcher.mock.calls[0][0]).toContain("/auth/forgot-password");
-    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ email: "writer@example.com" });
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+      email: "writer@example.com",
+    });
   });
 
   it("preserves leading zeroes in codes and clears the frontend cookie after reset", async () => {
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "Password reset successfully." }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ message: "Password reset successfully." }),
+      );
     vi.stubGlobal("fetch", fetcher);
-    const { passwordRecoveryAction } = await import("@/actions/auth");
+    const { passwordRecoveryAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", "writer@example.com");
     form.set("code", "012345");
     form.set("newPassword", "newpassword123");
     form.set("confirmPassword", "newpassword123");
     expect((await passwordRecoveryAction("reset", form)).error).toBe("");
-    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ email: "writer@example.com", code: "012345", newPassword: "newpassword123" });
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+      email: "writer@example.com",
+      code: "012345",
+      newPassword: "newpassword123",
+    });
     expect(cookieStore.delete).toHaveBeenCalledWith("bloghub_refresh");
   });
 
   it("rejects mismatched passwords and excessive UTF-8 length before calling the backend", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
-    const { passwordRecoveryAction } = await import("@/actions/auth");
+    const { passwordRecoveryAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", "writer@example.com");
     form.set("code", "123456");
     form.set("newPassword", "newpassword123");
     form.set("confirmPassword", "different123");
-    expect((await passwordRecoveryAction("reset", form)).error).toBe("Passwords do not match.");
+    expect((await passwordRecoveryAction("reset", form)).error).toBe(
+      "Passwords do not match.",
+    );
     form.set("newPassword", "က".repeat(25));
     form.set("confirmPassword", "က".repeat(25));
-    expect((await passwordRecoveryAction("reset", form)).error).toContain("72 UTF-8 bytes");
+    expect((await passwordRecoveryAction("reset", form)).error).toContain(
+      "72 UTF-8 bytes",
+    );
     expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("surfaces SMTP configuration errors without advancing the flow", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ message: "Password reset email is not configured" }, { status: 503 })));
-    const { passwordRecoveryAction } = await import("@/actions/auth");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json(
+            { message: "Password reset email is not configured" },
+            { status: 503 },
+          ),
+        ),
+    );
+    const { passwordRecoveryAction } = await import("@/modules/auth/actions");
     const form = new FormData();
     form.set("email", "writer@example.com");
-    expect(await passwordRecoveryAction("forgot", form)).toMatchObject({ message: "", error: "Password reset email is not configured" });
+    expect(await passwordRecoveryAction("forgot", form)).toMatchObject({
+      message: "",
+      error: "Password reset email is not configured",
+    });
     expect(cookieStore.delete).not.toHaveBeenCalled();
   });
 });

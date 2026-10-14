@@ -612,7 +612,7 @@ test("public reads reuse Next cache and taxonomy writes invalidate it", async ({
   expect(count(third, "/api/v1/categories")).toBeGreaterThan(count(second, "/api/v1/categories"));
 });
 
-test("Zustand reuses dashboard lists, details, and taxonomy during navigation", async ({ page, request }) => {
+test("RTK Query reuses dashboard lists, details, and taxonomy during navigation", async ({ page, request }) => {
   const requests: { url: string; action: boolean }[] = [];
   page.on("request", (request) => requests.push({
     url: request.url(), action: !!request.headers()["next-action"],
@@ -640,11 +640,11 @@ test("Zustand reuses dashboard lists, details, and taxonomy during navigation", 
   await story.click();
   await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
   expect(detailReads()).toBe(1);
-  await page.getByRole("textbox", { name: "Story title", exact: true }).fill("Updated through Zustand");
+  await page.getByRole("textbox", { name: "Story title", exact: true }).fill("Updated through RTK Query");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "My stories", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Updated through Zustand", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Updated through RTK Query", exact: true })).toBeVisible();
   expect(listReads()).toBeGreaterThan(initialReads);
   // The shared taxonomy write also invalidates already loaded blog labels.
   await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
@@ -654,12 +654,12 @@ test("Zustand reuses dashboard lists, details, and taxonomy during navigation", 
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.getByRole("link", { name: "My stories", exact: true }).click();
-  await expect(page.locator(".manage-row:visible").filter({ has: page.getByRole("link", { name: "Updated through Zustand", exact: true }) })).toContainText("Shared Ideas");
+  await expect(page.locator(".manage-row:visible").filter({ has: page.getByRole("link", { name: "Updated through RTK Query", exact: true }) })).toContainText("Shared Ideas");
   const log = await (await request.get(`${api}/__requests`)).json();
   expect(log.some((entry: { method: string; path: string }) => entry.method === "PATCH" && entry.path === "/api/v1/categories/cat-1")).toBe(true);
 });
 
-test("Zustand clears private lists when signing out and switching accounts", async ({ page }) => {
+test("RTK Query clears private lists when signing out and switching accounts", async ({ page }) => {
   await login(page);
   await expect(page.getByRole("link", { name: "Thoughtful story 1", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Thoughtful story 1", exact: true }).click();
