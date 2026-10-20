@@ -103,3 +103,40 @@ JPEG/PNG/WebP covers up to 5 MB upload with story writes. Preview object URLs ar
 - `npm run test:e2e`: production browser flows against the isolated in-memory API on 5301 and frontend on 3001.
 
 Browser tests do not connect to the real database or send mail. `BLOGHUB_TEST_BUILD=1` separates `.next-test` from local development output. Backend integration and deployment remain separate tasks.
+
+## Shared API wrapper
+
+`src/lib/api-client.ts` exports `apiWrapper<T>({ endpoint, method, body, headers, requiredAuth, ...options })`. `endpoint` is a full URL; `method` defaults to GET. Object bodies are serialized to JSON, existing JSON strings are preserved, and FormData uploads are sent without an automatic Content-Type header.
+
+The result is a typed union:
+
+- Success: `{ ok: true, status, data }`.
+- HTTP/network failure: `{ ok: false, status, data: { error } }`.
+
+The `ok` flag also distinguishes unreadable successful HTTP responses from usable data. Network failures use status 0. Required authentication is opt-in; `requiredAuth: true` checks that a Bearer header was supplied before fetching. The backend still validates the actual token and permissions. No Authorization header is generated for public requests.
+
+```ts
+const result = await apiWrapper<BlogPage>({
+  endpoint: `${API_BASE}/blogs?page=1&limit=9`,
+  method: "GET",
+});
+if (result.ok) {
+  console.log(result.data.items);
+} else {
+  console.error(result.status, result.data.error);
+}
+
+await apiWrapper<{ message: string }>({
+  endpoint: `${API_BASE}/auth/register`,
+  method: "POST",
+  body: { displayName, email, password },
+});
+```
+
+The wrapper handles HTTP 204 without parsing JSON, uses a default 15-second timeout, accepts caller cancellation, reads NestJS validation messages and error strings, and calls `onResponse` for both successful and failed HTTP responses. Authentication actions use that callback to copy or clear refresh cookies. `allowEmpty` supports successful auth responses with no JSON body.
+
+`unwrapApiResult(result)` is the bridge for higher-level functions that already expect returned data and thrown errors. It returns successful data or throws an ApiError with the original status/message. Public cache functions and authenticated transport use it, preserving article 404 handling, the single 401 refresh/retry, and RTK Query's existing error behavior. Content Server Actions inspect the result directly and invalidate public cache tags only after success.
+
+Dashboard reads follow component → generated RTK Query hook → baseApi → authenticatedRequest → apiWrapper → NestJS backend. Writes follow mutation hook → contentRequest → content Server Action → apiWrapper → backend. Admin user writes use authenticatedRequest directly. Public pages use module cache functions → feature API → apiWrapper. Authentication uses its actions/API helpers → apiWrapper and cookie response callbacks.
+
+Compared with the earlier positional interface, callers now pass one object and receive status plus data instead of data alone. Compared with Zolotaya's current implementation, BlogHub retains upload support, empty-response handling, timeout/cancellation, cookie callbacks, and richer backend errors. RTK Query still manages dashboard caching and Next.js still manages public caching; the wrapper does neither.

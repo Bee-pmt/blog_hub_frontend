@@ -1,6 +1,6 @@
 "use server";
 import { updateTag } from "next/cache";
-import { ApiError, apiRequest, errorMessage } from "@/lib/api-client";
+import { API_BASE, ApiError, apiWrapper, errorMessage } from "@/lib/api-client";
 
 export async function mutateContentAction(
   path: string,
@@ -25,13 +25,22 @@ export async function mutateContentAction(
   if (!accessToken)
     return { ok: false as const, error: "Please sign in again.", status: 401 };
   try {
-    const data = await apiRequest<unknown>(path, method, {
+    const result = await apiWrapper<unknown>({
+      endpoint: `${API_BASE}${path}`,
+      method,
       body,
       headers: { Authorization: `Bearer ${accessToken}` },
+      requiredAuth: true,
     });
+    if (!result.ok)
+      return {
+        ok: false as const,
+        error: result.data.error,
+        status: result.status,
+      };
     updateTag("blogs");
     if (/^\/(categories|tags)(\/|$)/.test(path)) updateTag("taxonomy");
-    return { ok: true as const, data };
+    return { ok: true as const, data: result.data };
   } catch (error) {
     return {
       ok: false as const,

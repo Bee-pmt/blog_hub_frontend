@@ -6,7 +6,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Markdown as MarkdownExtension } from "@tiptap/markdown";
 import Markdown, { safeMarkdownUrl } from "@/modules/blogs/components/markdown";
-import { ApiError, apiRequest } from "@/lib/api-client";
+import {
+  API_BASE,
+  ApiError,
+  apiWrapper,
+  unwrapApiResult,
+} from "@/lib/api-client";
 import { blogImageUrl, saveBlog } from "@/modules/blogs/api";
 import { localReturnPath } from "@/modules/auth/api";
 import { queryString } from "@/lib/utils";
@@ -49,7 +54,14 @@ describe("API contract", () => {
       coverImageUrl: null,
     };
     const image = new File(["image bytes"], "cover.png", { type: "image/png" });
-    await saveBlog(input, undefined, image, apiRequest);
+    const send = vi.fn().mockResolvedValue({ id: "story-1" });
+    await saveBlog(input, undefined, image, send);
+    const multipart = send.mock.calls[0][2].body as FormData;
+    await apiWrapper({
+      endpoint: `${API_BASE}/blogs`,
+      method: "POST",
+      body: multipart,
+    });
     const options = fetcher.mock.calls[0][1];
     expect(new Headers(options.headers).has("Content-Type")).toBe(false);
     const form = options.body as FormData;
@@ -73,14 +85,15 @@ describe("API contract", () => {
       body: JSON.stringify(input),
     });
   });
-  it("rejects unreadable successful responses", async () => {
+  it("returns an error result for unreadable successful responses", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response("invalid JSON")),
     );
-    await expect(apiRequest("/blogs")).rejects.toMatchObject({
+    expect(await apiWrapper({ endpoint: `${API_BASE}/blogs` })).toEqual({
+      ok: false,
       status: 200,
-      message: "The server returned an unreadable response.",
+      data: { error: "The server returned an unreadable response." },
     });
   });
   it("resolves uploaded image paths against the backend origin", () => {
@@ -113,7 +126,9 @@ describe("API contract", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
     );
-    await expect(apiRequest("/blogs/id", "DELETE")).resolves.toBeUndefined();
+    expect(
+      await apiWrapper({ endpoint: `${API_BASE}/blogs/id`, method: "DELETE" }),
+    ).toEqual({ ok: true, status: 204, data: undefined });
   });
   it("shows backend validation arrays", async () => {
     vi.stubGlobal(
@@ -127,9 +142,10 @@ describe("API contract", () => {
           ),
         ),
     );
-    await expect(apiRequest("/blogs")).rejects.toMatchObject({
+    expect(await apiWrapper({ endpoint: `${API_BASE}/blogs` })).toEqual({
+      ok: false,
       status: 400,
-      message: "Title required · Category required",
+      data: { error: "Title required · Category required" },
     });
   });
   it("distinguishes network failures from authentication", async () => {
@@ -137,8 +153,95 @@ describe("API contract", () => {
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
     );
-    await expect(apiRequest("/blogs")).rejects.toBeInstanceOf(ApiError);
-    await expect(apiRequest("/blogs")).rejects.toMatchObject({ status: 0 });
+    const result = await apiWrapper({ endpoint: `${API_BASE}/blogs` });
+    expect(result).toMatchObject({ ok: false, status: 0 });
+    expect(() => unwrapApiResult(result)).toThrow(ApiError);
+  });
+  it("serializes object bodies, returns status/data, and does not add public authentication", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(Response.json({ id: "created" }, { status: 201 }));
+    vi.stubGlobal("fetch", fetcher);
+    const result = await apiWrapper<{ id: string }>({
+      endpoint: `${API_BASE}/blogs`,
+      method: "POST",
+      body: { title: "Story" },
+    });
+    expect(result).toEqual({ ok: true, status: 201, data: { id: "created" } });
+    const [endpoint, options] = fetcher.mock.calls[0];
+    expect(endpoint).toBe(`${API_BASE}/blogs`);
+    expect(options.body).toBe('{"title":"Story"}');
+    expect(new Headers(options.headers).get("Content-Type")).toBe(
+      "application/json",
+    );
+    expect(new Headers(options.headers).has("Authorization")).toBe(false);
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.cache).toBe("no-store");
+  });
+  it("requires an explicit Bearer token only for protected calls", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ id: "user" }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(
+      await apiWrapper({ endpoint: `${API_BASE}/auth/me`, requiredAuth: true }),
+    ).toEqual({
+      ok: false,
+      status: 401,
+      data: { error: "Access token is required" },
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    await apiWrapper({
+      endpoint: `${API_BASE}/auth/me`,
+      requiredAuth: true,
+      headers: new Headers({ Authorization: "Bearer access" }),
+    });
+    expect(
+      new Headers(fetcher.mock.calls[0][1].headers).get("Authorization"),
+    ).toBe("Bearer access");
+  });
+  it("calls the response callback on HTTP errors and preserves their status for authentication retry", async () => {
+    const response = Response.json({ error: "Expired" }, { status: 401 });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const onResponse = vi.fn();
+    const result = await apiWrapper({
+      endpoint: `${API_BASE}/auth/refresh`,
+      method: "POST",
+      onResponse,
+    });
+    expect(onResponse).toHaveBeenCalledWith(response);
+    expect(result).toEqual({
+      ok: false,
+      status: 401,
+      data: { error: "Expired" },
+    });
+    expect(() => unwrapApiResult(result)).toThrow(
+      expect.objectContaining({ status: 401 }),
+    );
+  });
+  it("supports explicitly allowed empty successful responses and reports caller cancellation", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(
+      await apiWrapper({
+        endpoint: `${API_BASE}/auth/logout`,
+        method: "POST",
+        allowEmpty: true,
+      }),
+    ).toEqual({ ok: true, status: 200, data: null });
+    const controller = new AbortController();
+    controller.abort();
+    fetcher.mockRejectedValue(new DOMException("Aborted", "AbortError"));
+    expect(
+      await apiWrapper({
+        endpoint: `${API_BASE}/blogs`,
+        signal: controller.signal,
+      }),
+    ).toEqual({
+      ok: false,
+      status: 0,
+      data: { error: "The request was cancelled." },
+    });
   });
   it("rejects external or malformed return destinations", () => {
     for (const path of [
@@ -172,18 +275,16 @@ describe("authentication Server Actions", () => {
     const expires = "Wed, 14 Oct 2026 12:00:00 GMT";
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          Response.json(
-            { accessToken: "access", expiresIn: 3600 },
-            {
-              headers: {
-                "Set-Cookie": `bloghub_refresh=refresh; Path=/api/v1/auth; HttpOnly; Expires=${expires}`,
-              },
+      vi.fn().mockResolvedValue(
+        Response.json(
+          { accessToken: "access", expiresIn: 3600 },
+          {
+            headers: {
+              "Set-Cookie": `bloghub_refresh=refresh; Path=/api/v1/auth; HttpOnly; Expires=${expires}`,
             },
-          ),
+          },
         ),
+      ),
     );
     const { submitAuthAction } = await import("@/modules/auth/actions");
     const form = new FormData();
@@ -254,21 +355,19 @@ describe("authentication Server Actions", () => {
 });
 describe("session rotation", () => {
   it("shares one refresh and uses the returned expiry", async () => {
-    const fetcher = vi
-      .fn()
-      .mockImplementation(async (url: string) =>
-        url.endsWith("/auth/refresh")
-          ? Response.json(
-              { accessToken: "fresh", expiresIn: 3600 },
-              {
-                headers: {
-                  "Set-Cookie":
-                    "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
-                },
+    const fetcher = vi.fn().mockImplementation(async (url: string) =>
+      url.endsWith("/auth/refresh")
+        ? Response.json(
+            { accessToken: "fresh", expiresIn: 3600 },
+            {
+              headers: {
+                "Set-Cookie":
+                  "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
               },
-            )
-          : Response.json({ ok: true }),
-      );
+            },
+          )
+        : Response.json({ ok: true }),
+    );
     vi.stubGlobal("fetch", fetcher);
     const session = await import("@/lib/session");
     await Promise.all([
@@ -330,19 +429,17 @@ describe("session rotation", () => {
     vi.stubGlobal("navigator", { locks: { request: lock } });
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          Response.json(
-            { accessToken: "fresh", expiresIn: 3600 },
-            {
-              headers: {
-                "Set-Cookie":
-                  "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
-              },
+      vi.fn().mockResolvedValue(
+        Response.json(
+          { accessToken: "fresh", expiresIn: 3600 },
+          {
+            headers: {
+              "Set-Cookie":
+                "bloghub_refresh=rotated; HttpOnly; Path=/api/v1/auth",
             },
-          ),
+          },
         ),
+      ),
     );
     const session = await import("@/lib/session");
     await session.refreshSession();
@@ -447,14 +544,12 @@ describe("safe articles and writing", () => {
 
 describe("Password recovery actions", () => {
   it("requests a code using a normalized email without exposing account details", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        Response.json({
-          message:
-            "If this email is registered, a password reset code has been sent.",
-        }),
-      );
+    const fetcher = vi.fn().mockResolvedValue(
+      Response.json({
+        message:
+          "If this email is registered, a password reset code has been sent.",
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
     const { passwordRecoveryAction } = await import("@/modules/auth/actions");
     const form = new FormData();

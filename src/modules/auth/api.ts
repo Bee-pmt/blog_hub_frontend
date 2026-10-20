@@ -1,5 +1,5 @@
 import type { ApiRequest } from "@/lib/api-client";
-import { apiRequest } from "@/lib/api-client";
+import { API_BASE, apiWrapper, unwrapApiResult } from "@/lib/api-client";
 import type { User } from "@/modules/users/types";
 import type { TokenResponse, RegistrationInput } from "./types";
 
@@ -7,24 +7,32 @@ export function getCurrentUser(send: ApiRequest) {
   return send<User>("/auth/me");
 }
 
-export function registerUser(input: RegistrationInput) {
-  return apiRequest<User>("/auth/register", "POST", {
-    body: JSON.stringify(input),
-  });
+export async function registerUser(input: RegistrationInput) {
+  return unwrapApiResult(
+    await apiWrapper<{ message: string }>({
+      endpoint: `${API_BASE}/auth/register`,
+      method: "POST",
+      body: input,
+    }),
+  );
 }
 
 // The Server Action copies cookies using onResponse, including failed refreshes.
-export function requestAuthSession(
+export async function requestAuthSession(
   route: "login" | "refresh" | "logout",
   headers: Headers,
   body: object | undefined,
   onResponse: (response: Response) => void,
 ) {
-  return apiRequest<TokenResponse | null>(
-    `/auth/${route}`,
-    "POST",
-    { headers, body: body ? JSON.stringify(body) : undefined },
-    { onResponse, allowEmpty: true },
+  return unwrapApiResult(
+    await apiWrapper<TokenResponse | null>({
+      endpoint: `${API_BASE}/auth/${route}`,
+      method: "POST",
+      headers,
+      body,
+      onResponse,
+      allowEmpty: true,
+    }),
   );
 }
 

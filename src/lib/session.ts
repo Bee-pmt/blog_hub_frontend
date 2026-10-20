@@ -1,5 +1,10 @@
 import type { TokenResponse } from "@/modules/auth/types";
-import { ApiError, apiRequest } from "@/lib/api-client";
+import {
+  API_BASE,
+  ApiError,
+  apiWrapper,
+  unwrapApiResult,
+} from "@/lib/api-client";
 import { refreshSessionAction } from "@/modules/auth/actions";
 let accessToken = "";
 let expiresAt = 0;
@@ -68,14 +73,20 @@ export async function authenticatedRequest<T>(
   retryUnauthorized = true,
 ) {
   return withAccessToken(
-    (token) =>
-      apiRequest<T>(route, method, {
-        ...options,
-        headers: {
-          ...Object.fromEntries(new Headers(options.headers)),
-          Authorization: `Bearer ${token}`,
-        },
-      }),
+    async (token) =>
+      unwrapApiResult(
+        await apiWrapper<T>({
+          ...options,
+          endpoint: `${API_BASE}${route}`,
+          method,
+          body: options.body as string | FormData | undefined,
+          headers: {
+            ...Object.fromEntries(new Headers(options.headers)),
+            Authorization: `Bearer ${token}`,
+          },
+          requiredAuth: true,
+        }),
+      ),
     retryUnauthorized,
   );
 }

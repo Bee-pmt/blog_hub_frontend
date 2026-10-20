@@ -1,16 +1,29 @@
-import { API_BASE, apiRequest, type ApiRequest } from "@/lib/api-client";
+import {
+  API_BASE,
+  apiWrapper,
+  unwrapApiResult,
+  type ApiRequest,
+} from "@/lib/api-client";
 import { queryString, httpUrl } from "@/lib/utils";
 import type { Blog, BlogPage, BlogInput } from "./types";
 
-// Public reads use apiRequest; protected calls receive the app provider's api function.
-export function getBlogs(
+// Public reads use apiWrapper; saving receives the authenticated content sender.
+export async function getBlogs(
   filters: Record<string, string | number | undefined> = {},
 ) {
-  return apiRequest<BlogPage>(`/blogs${queryString(filters)}`);
+  return unwrapApiResult(
+    await apiWrapper<BlogPage>({
+      endpoint: `${API_BASE}/blogs${queryString(filters)}`,
+    }),
+  );
 }
 
-export function getBlog(slug: string) {
-  return apiRequest<Blog>(`/blogs/${encodeURIComponent(slug)}`);
+export async function getBlog(slug: string) {
+  return unwrapApiResult(
+    await apiWrapper<Blog>({
+      endpoint: `${API_BASE}/blogs/${encodeURIComponent(slug)}`,
+    }),
+  );
 }
 
 export function saveBlog(

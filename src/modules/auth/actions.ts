@@ -2,7 +2,13 @@
 import type { TokenResponse } from "@/modules/auth/types";
 
 import { cookies, headers } from "next/headers";
-import { ApiError, apiRequest, errorMessage } from "@/lib/api-client";
+import {
+  API_BASE,
+  ApiError,
+  apiWrapper,
+  unwrapApiResult,
+  errorMessage,
+} from "@/lib/api-client";
 import { registerUser, requestAuthSession } from "@/modules/auth/api";
 
 const refreshCookie = "bloghub_refresh";
@@ -172,12 +178,12 @@ export async function passwordRecoveryAction(
       body.code = code;
       body.newPassword = newPassword;
     }
-    const data = await apiRequest<{ message: string }>(
-      `/auth/${mode === "forgot" ? "forgot-password" : "reset-password"}`,
-      "POST",
-      {
-        body: JSON.stringify(body),
-      },
+    const data = unwrapApiResult(
+      await apiWrapper<{ message: string }>({
+        endpoint: `${API_BASE}/auth/${mode === "forgot" ? "forgot-password" : "reset-password"}`,
+        method: "POST",
+        body,
+      }),
     );
     if (mode === "reset") await clearSessionAction();
     return { message: data.message, error: "" };
