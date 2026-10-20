@@ -59,3 +59,28 @@ export type Recovery = {
   savedAt: string;
   baseUpdatedAt: string | null;
 };
+
+export type BlogAuditSummary = {
+  id: string;
+  blogId: string;
+  blogTitle: string;
+  actorId: string;
+  postAuthorId: string;
+  action: "updated" | "published" | "unpublished" | "deleted";
+  createdAt: string;
+};
+
+type AuditValue = string | boolean | null | Blog["category"] | Blog["tags"];
+
+export type BlogAuditLog = BlogAuditSummary & {
+  changes: Record<string, { old: AuditValue; new: AuditValue }>;
+  snapshot: (Omit<Blog, "author"> & { authorId: string }) | null;
+};
+
+export type BlogAuditPage = {
+  items: BlogAuditSummary[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};

@@ -1,5 +1,71 @@
 import { test, expect, Page } from "@playwright/test";
+import { encode } from "next-auth/jwt";
 const api = "http://localhost:5301/api/v1";
+async function googleHandoff(page: Page, idToken: string, mode = "login") {
+  const token = await encode({ secret: "playwright-only-google-oauth-secret-32-bytes", salt: "bloghub_google", maxAge: 600, token: { googleIdToken: idToken, googleExpiresAt: Date.now() + 600_000 } });
+  await page.context().addCookies([
+    { name: "bloghub_google", value: token, url: "http://localhost:3001", httpOnly: true, sameSite: "Lax" },
+    { name: "bloghub_oauth_intent", value: JSON.stringify({ mode, returnTo: "/dashboard" }), url: "http://localhost:3001", httpOnly: true, sameSite: "Lax" },
+  ]);
+  await page.goto("/auth/google");
+}
+
+test("new Google users set a password before creation and can later use password login", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("button", { name: "Continue with Google", exact: true })).toBeVisible();
+  await googleHandoff(page, "google-new");
+  await expect(page.getByRole("heading", { name: "Complete your account." })).toBeVisible();
+  await page.getByLabel("Create password", { exact: true }).fill("password123");
+  await page.getByLabel("Confirm password", { exact: true }).fill("different123");
+  await page.getByRole("button", { name: "Create account and sign in" }).click();
+  await expect(page.locator("main [role=alert]")).toHaveText("Passwords do not match.");
+  await page.getByLabel("Confirm password", { exact: true }).fill("password123");
+  await page.getByRole("button", { name: "Create account and sign in" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("heading", { name: "Google Writer", exact: true })).toBeVisible();
+  expect((await page.context().cookies()).some(cookie => cookie.name === "bloghub_google")).toBe(false);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "google-new@test.local");
+});
+
+test("existing users confirm their password once and later Google sign-ins need no password", async ({ page }) => {
+  await googleHandoff(page, "google-author");
+  await page.getByLabel("Current BlogHub password").fill("incorrect");
+  await page.getByRole("button", { name: "Confirm password and link Google" }).click();
+  await expect(page.locator("main [role=alert]")).toHaveText("Invalid email or password");
+  await page.getByLabel("Current BlogHub password").fill("password123");
+  await page.getByRole("button", { name: "Confirm password and link Google" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await googleHandoff(page, "google-author");
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Sign in with Google", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+test("settings link requires the current password and preserves the signed-in account", async ({ page }) => {
+  await login(page);
+  await page.goto("/settings");
+  await expect(page.getByRole("button", { name: "Link Google", exact: true })).toBeVisible();
+  await googleHandoff(page, "google-other", "link");
+  await page.getByLabel("Current BlogHub password").fill("password123");
+  await page.getByRole("button", { name: "Confirm password and link Google" }).click();
+  await expect(page.locator("main [role=alert]")).toHaveText("Google email must match your current account email");
+  await googleHandoff(page, "google-author", "link");
+  await page.getByLabel("Current BlogHub password").fill("password123");
+  await page.getByRole("button", { name: "Confirm password and link Google" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByText("Google is linked. You can sign in with Google or your password.")).toBeVisible();
+});
+
+test("Google completion rejects a forged handoff cookie", async ({ page }) => {
+  await page.context().addCookies([{ name: "bloghub_google", value: "forged", url: "http://localhost:3001" }]);
+  await page.goto("/auth/google");
+  await expect(page.getByRole("heading", { name: "Unable to continue with Google" })).toBeVisible();
+  await expect(page.locator("main [role=alert]")).toContainText("expired");
+});
 test.beforeEach(async ({ request, page, context }) => {
   await request.post(`${api}/__reset`);
   // Isolate the real Next cache through authorized writes to disposable fixture data.
@@ -657,6 +723,81 @@ test("RTK Query reuses dashboard lists, details, and taxonomy during navigation"
   await expect(page.locator(".manage-row:visible").filter({ has: page.getByRole("link", { name: "Updated through RTK Query", exact: true }) })).toContainText("Shared Ideas");
   const log = await (await request.get(`${api}/__requests`)).json();
   expect(log.some((entry: { method: string; path: string }) => entry.method === "PATCH" && entry.path === "/api/v1/categories/cat-1")).toBe(true);
+});
+
+test("activity paginates, shows changes safely, and retains a deleted story snapshot", async ({ page, request }) => {
+  const post = await (await request.get(`${api}/blogs/thoughtful-story-1`)).json();
+  const items = Array.from({ length: 12 }, (_, index) => ({
+    id: `audit-${index}`, blogId: post.id, blogTitle: `Edited story ${index}`, actorId: "author", postAuthorId: "author", action: "updated",
+    createdAt: new Date(Date.UTC(2026, 9, 20, 12, 0, 0) - index * 1000).toISOString(),
+    changes: { title: { old: `Old title ${index}`, new: `Edited story ${index}` } }, snapshot: null,
+  }));
+  const fixtureItems = [
+    { ...items[0], changes: { title: { old: "Original title", new: "Edited story 0" }, content: { old: "Original content", new: '<script>alert("unsafe")</script>' }, category: { old: null, new: { id: "cat-1", name: "Ideas", slug: "ideas" } }, tags: { old: [], new: [{ id: "tag-1", name: "Thinking", slug: "thinking", categoryId: "cat-1" }] }, publicationBlocked: { old: false, new: true } } },
+    { ...items[1], blogTitle: "Deleted story", action: "deleted", changes: {}, snapshot: { ...post, authorId: "author", title: "Deleted story", content: '# Retained draft\n\nHistorical content.\n\n<script>alert("unsafe")</script>' } },
+    ...items.slice(2),
+    { ...items[0], id: "audit-admin", actorId: "admin", action: "unpublished", blogTitle: "Admin moderation" },
+  ];
+  await request.post(`${api}/__audit-fixtures`, { data: { items: fixtureItems } });
+  await login(page);
+  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "My activity", exact: true })).toBeVisible();
+  await expect(page.getByText("12 actions · 10 per page")).toBeVisible();
+  await expect(page.locator(".manage-row:visible")).toHaveCount(10);
+  await expect(page.getByText("Admin moderation", { exact: true })).toHaveCount(0);
+  const openFirst = page.getByRole("button", { name: "View details for Edited story 0", exact: true });
+  await openFirst.click();
+  const dialog = page.getByRole("dialog", { name: "Activity details" });
+  await expect(dialog.getByText("Original title", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Thinking", { exact: true })).toBeVisible();
+  await expect(dialog.getByText('<script>alert("unsafe")</script>', { exact: true })).toBeVisible();
+  await expect(dialog.locator("script")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(openFirst).toBeFocused();
+  await page.getByRole("button", { name: "View details for Deleted story", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Retained draft" })).toBeVisible();
+  await expect(dialog.getByText("Historical content.", { exact: true })).toBeVisible();
+  await expect(dialog.locator("script")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("navigation", { name: "Activity pages" }).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Page 2 of 2")).toBeVisible();
+  await expect(page.locator(".manage-row:visible")).toHaveCount(2);
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(page.getByText("Page 1 of 2")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "View details for Edited story 0", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("activity-mobile.png"), fullPage: true });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "admin@test.local");
+  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Admin moderation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edited story 0", exact: true })).toHaveCount(0);
+});
+
+test("activity handles empty history, list errors, and missing detail records", async ({ page, request }) => {
+  await login(page);
+  await request.post(`${api}/__fail-request`, { data: { path: "/me/blog-audit-logs", method: "GET", message: "Activity temporarily unavailable", status: 503 } });
+  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await expect(page.locator("main [role=alert]")).toContainText("Activity temporarily unavailable");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No activity yet.", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await request.post(`${api}/__audit-fixtures`, { data: { items: [{ id: "gone", blogId: "story-1", blogTitle: "Unavailable record", actorId: "author", postAuthorId: "author", action: "updated", createdAt: "2026-10-20T12:00:00.000Z", changes: {}, snapshot: null }] } });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Unavailable record", exact: true })).toBeVisible();
+  await request.post(`${api}/__fail-request`, { data: { path: "/me/blog-audit-logs/gone", method: "GET", message: "Audit log not found", status: 404 } });
+  await page.getByRole("button", { name: "View details for Unavailable record", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Activity details" });
+  await expect(dialog.getByRole("alert")).toContainText("Audit log not found");
+  await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Unavailable record", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test("RTK Query clears private lists when signing out and switching accounts", async ({ page }) => {

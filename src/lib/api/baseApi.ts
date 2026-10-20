@@ -38,7 +38,7 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
 export const baseApi = createApi({
   reducerPath: "bloghubApi",
   baseQuery,
-  tagTypes: ["Blog", "Taxonomy", "User"],
+  tagTypes: ["Blog", "BlogAudit", "Taxonomy", "User"],
   keepUnusedDataFor: 60,
   refetchOnMountOrArgChange: 60,
   endpoints: () => ({}),

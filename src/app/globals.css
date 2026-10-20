@@ -903,6 +903,10 @@ label .form-control {
   margin-top: 1.5rem;
   color: var(--muted);
 }
+.google-button { width: 100%; gap: 0.75rem; }
+.google-signin { margin-block: 1.5rem; }
+.google-divider { color: var(--muted); text-align: center; font-size: 0.8rem; }
+.google-settings { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
 .dashboard-layout {
   display: grid;
   grid-template-columns: 205px minmax(0, 1fr);
@@ -1031,6 +1035,14 @@ label .form-control {
 .confirm-dialog::backdrop {
   background: rgb(0 0 0 / 0.55);
 }
+.activity-dialog { width: 56rem; max-width: calc(100% - 2rem); max-height: 85vh; overflow-y: auto; }
+.activity-dialog .section-heading { align-items: center; gap: 1rem; }
+.activity-change { margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.activity-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 0.75rem; }
+.activity-values pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: var(--subtle); padding: 1rem; margin-top: 0.5rem; }
+.activity-metadata { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1rem; margin-bottom: 1.5rem; }
+.activity-metadata dd { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .activity-values { grid-template-columns: 1fr; } .activity-dialog { padding: 1.25rem; } }
 .confirm-dialog h2 {
   font-size: 1.5rem;
   margin-bottom: 1rem;

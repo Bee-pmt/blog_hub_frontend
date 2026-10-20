@@ -66,6 +66,8 @@ Authenticated reads and user-management writes use the browser's Bearer transpor
 
 Account ID or role changes, logout, and session loss reset the entire RTK Query cache. A late response cannot reinsert an old account's query after reset. The Redux account slice ignores outdated restoration responses by request ID. Cache state is kept in memory and not persisted.
 
+`/dashboard/activity` shows the current user's blog audit history. Its list and detail queries live in the existing `blogs/store/services/blogApi.ts`. Story writes invalidate the `BlogAudit` list tag; immutable details are cached by audit-record ID. A native dialog shows old/new values or the retained deletion snapshot. Both authors and admins use the personal `/me/blog-audit-logs` endpoints; there is no admin-wide activity view. Audit content stays in the authenticated RTK Query cache, and raw changes render as text rather than HTML.
+
 ## Public content caching
 
 Public reads follow:

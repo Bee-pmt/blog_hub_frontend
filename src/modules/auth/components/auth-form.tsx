@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/api-client";
 import { localReturnPath } from "@/modules/auth/api";
 import { submitAuthAction } from "@/modules/auth/actions";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
+import GoogleButton from "./google-button";
 
 type AuthFormProps = { mode: "login" | "register" };
 
@@ -167,6 +168,8 @@ export default function AuthForm({ mode }: AuthFormProps) {
                     : "Sign in"}
               </button>
             </form>
+            <p className="google-divider">or</p>
+            <GoogleButton />
             <p className="account-switch">
               {isRegister ? "Already have an account?" : "New to BlogHub?"}{" "}
               <Link

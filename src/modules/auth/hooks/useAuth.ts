@@ -7,6 +7,7 @@ import {
   logoutAuth,
   endAuth,
   changePasswordAuth,
+  googleLoginAuth,
 } from "../store/slices/authSlice";
 
 // Keep authentication actions together; Redux owns the account state.
@@ -17,6 +18,7 @@ export function useAuth() {
     () => ({
       restore: () => dispatch(restoreAuth()).unwrap(),
       login: (form: FormData) => dispatch(loginAuth(form)).unwrap(),
+      completeGoogle: (form: FormData) => dispatch(googleLoginAuth(form)).unwrap(),
       logout: () => dispatch(logoutAuth()).unwrap(),
       endSession: () => dispatch(endAuth()).unwrap(),
       changePassword: (currentPassword: string, newPassword: string) =>

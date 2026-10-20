@@ -1,6 +1,12 @@
 import { baseApi } from "@/lib/api/baseApi";
 import { queryString } from "@/lib/utils";
-import type { Blog, BlogInput, BlogPage } from "../../types";
+import type {
+  Blog,
+  BlogInput,
+  BlogPage,
+  BlogAuditLog,
+  BlogAuditPage,
+} from "../../types";
 import { saveBlog } from "../../api";
 import { ApiError, errorMessage } from "@/lib/api-client";
 import { contentRequest } from "@/lib/content-client";
@@ -9,6 +15,17 @@ import { sessionEnded } from "@/modules/auth/store/slices/authSlice";
 
 export const blogApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    getMyBlogAuditLogs: builder.query<BlogAuditPage, number>({
+      query: (page) => ({
+        route: `/me/blog-audit-logs${queryString({ page, limit: 10 })}`,
+      }),
+      providesTags: ["BlogAudit"],
+    }),
+    getMyBlogAuditLog: builder.query<BlogAuditLog, string>({
+      query: (id) => ({
+        route: `/me/blog-audit-logs/${encodeURIComponent(id)}`,
+      }),
+    }),
     getManagedBlogs: builder.query<
       BlogPage,
       { admin: boolean; status: string; page: number }
@@ -40,7 +57,7 @@ export const blogApi = baseApi.injectEndpoints({
           return { error: { status, message: errorMessage(failure) } };
         }
       },
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog"]),
+      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
     }),
     changeBlogStatus: builder.mutation<
       Blog,
@@ -53,18 +70,20 @@ export const blogApi = baseApi.injectEndpoints({
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog"]),
+      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
     }),
     deleteBlog: builder.mutation<null, string>({
       query: (id) => ({
         route: `/blogs/${encodeURIComponent(id)}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog"]),
+      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
     }),
   }),
 });
 export const {
+  useGetMyBlogAuditLogsQuery,
+  useGetMyBlogAuditLogQuery,
   useGetManagedBlogsQuery,
   useLazyGetEditableBlogQuery,
   useSaveBlogMutation,

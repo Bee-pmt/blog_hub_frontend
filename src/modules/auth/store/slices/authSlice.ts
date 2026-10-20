@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import type { User } from "@/modules/users/types";
+import { completeGoogleAction } from "../../google-actions";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/modules/auth/api";
 import {
@@ -46,6 +47,17 @@ export const loginAuth = createAsyncThunk(
     return user;
   },
 );
+export const googleLoginAuth = createAsyncThunk("auth/google", async (form: FormData) => {
+  const user = await sessionLock(async () => {
+    const result = await completeGoogleAction(form);
+    if (!result.data) throw new ApiError(result.error || "Unable to sign in with Google.", result.status);
+    clearSession();
+    setSession(result.data);
+    return getCurrentUser(authenticatedRequest);
+  });
+  channel?.postMessage("login");
+  return user;
+});
 export const endAuth = createAsyncThunk(
   "auth/end",
   async (_, { getState, dispatch }) => {
@@ -117,7 +129,7 @@ const authSlice = createSlice({
     },
   },
   extraReducers(builder) {
-    for (const operation of [restoreAuth, loginAuth]) {
+    for (const operation of [restoreAuth, loginAuth, googleLoginAuth]) {
       builder.addCase(operation.pending, (state, action) => {
         state.loading = true;
         state.error = "";

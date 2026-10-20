@@ -19,7 +19,7 @@ export async function registerUser(input: RegistrationInput) {
 
 // The Server Action copies cookies using onResponse, including failed refreshes.
 export async function requestAuthSession(
-  route: "login" | "refresh" | "logout",
+  route: "login" | "refresh" | "logout" | "google",
   headers: Headers,
   body: object | undefined,
   onResponse: (response: Response) => void,

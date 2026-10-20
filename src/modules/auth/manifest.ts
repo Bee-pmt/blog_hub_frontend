@@ -3,11 +3,13 @@ import LoginPage from "./pages/login/page";
 import RegisterPage from "./pages/register/page";
 import ForgotPasswordPage from "./pages/forgot-password/page";
 import SettingsPage from "./pages/settings/page";
+import GooglePage from "./pages/google/page";
 const manifest: ModuleManifest = {
   id: "auth",
   name: "Authentication",
   navItems: [],
   routes: [
+    { path: "/auth/google", component: GooglePage, title: "Continue with Google" },
     { path: "/login", component: LoginPage, title: "Sign in" },
     { path: "/register", component: RegisterPage, title: "Create an account" },
     {

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { errorMessage } from "@/lib/api-client";
 import { passwordRecoveryAction } from "@/modules/auth/actions";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
+import GoogleButton from "./google-button";
 
 export default function PasswordForm({ mode }: { mode: "change" | "forgot" }) {
   const {
@@ -296,6 +297,13 @@ export default function PasswordForm({ mode }: { mode: "change" | "forgot" }) {
             {change ? "Back to your workspace" : "Back to sign in"}
           </Link>
         </p>
+        {change && user && !loading && (
+          <section className="google-settings">
+            <h2>Google sign-in</h2>
+            <p className="field-help">Link Google with your current password once. Your email and password login will keep working.</p>
+            <GoogleButton link />
+          </section>
+        )}
       </div>
     </main>
   );

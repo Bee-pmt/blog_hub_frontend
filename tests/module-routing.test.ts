@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("@/modules/auth/google-actions", () => ({
+  completeGoogleAction: vi.fn(), prepareGoogleAction: vi.fn(), startGoogleAction: vi.fn(),
+}));
 vi.mock("next/cache", () => ({
   cacheLife: vi.fn(),
   cacheTag: vi.fn(),
@@ -15,8 +18,10 @@ describe("module manifest routing", () => {
       "/register",
       "/forgot-password",
       "/settings",
+      "/auth/google",
       "/dashboard",
       "/dashboard/posts/new",
+      "/dashboard/activity",
       "/dashboard/taxonomy",
       "/dashboard/admin/posts",
       "/dashboard/admin/users",
@@ -55,6 +60,7 @@ describe("module manifest routing", () => {
     ).toEqual([
       "/dashboard",
       "/dashboard/posts/new",
+      "/dashboard/activity",
       "/dashboard/admin/posts",
       "/dashboard/taxonomy",
       "/dashboard/admin/users",

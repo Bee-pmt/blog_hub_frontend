@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/modules/auth/google-actions", () => ({ completeGoogleAction: vi.fn() }));
 import { createAppStore } from "@/lib/store";
 import { baseApi } from "@/lib/api/baseApi";
 import { blogApi } from "@/modules/blogs/store/services/blogApi";
@@ -46,6 +47,18 @@ afterEach(() => {
   stores.length = 0;
 });
 describe("RTK Query content", () => {
+  it("caches audit pages and immutable details, then refreshes history after a story mutation", async () => {
+    const app = store();
+    await app.dispatch(blogApi.endpoints.getMyBlogAuditLogs.initiate(1)).unwrap();
+    await app.dispatch(blogApi.endpoints.getMyBlogAuditLogs.initiate(1)).unwrap();
+    await app.dispatch(blogApi.endpoints.getMyBlogAuditLog.initiate("audit-record")).unwrap();
+    expect(authenticatedRequest).toHaveBeenCalledTimes(2);
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(1, "/me/blog-audit-logs?page=1&limit=10", "GET", expect.anything());
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/me/blog-audit-logs/audit-record", "GET", expect.anything());
+    await app.dispatch(blogApi.endpoints.deleteBlog.initiate("story-1")).unwrap();
+    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(3));
+    expect(authenticatedRequest).toHaveBeenLastCalledWith("/me/blog-audit-logs?page=1&limit=10", "GET", expect.anything());
+  });
   it("shares concurrent list requests and reuses cached results", async () => {
     const app = store();
     const args = { admin: false, status: "", page: 1 };

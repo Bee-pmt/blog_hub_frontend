@@ -18,6 +18,11 @@ import {
   clearSessionAction,
 } from "@/modules/auth/actions";
 import { ApiError } from "@/lib/api-client";
+import { completeGoogleAction } from "@/modules/auth/google-actions";
+import { googleLoginAuth } from "@/modules/auth/store/slices/authSlice";
+vi.mock("@/modules/auth/google-actions", () => ({
+  completeGoogleAction: vi.fn(),
+}));
 vi.mock("@/modules/auth/actions", () => ({
   submitAuthAction: vi.fn(),
   logoutAction: vi.fn(),
@@ -53,6 +58,19 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 describe("Redux authentication", () => {
+  it("uses the existing Redux session for a successful Google login", async () => {
+    vi.mocked(completeGoogleAction).mockResolvedValue({
+      data: { accessToken: "google-app-access", expiresIn: 3600 },
+      linked: false,
+      returnTo: "/dashboard",
+      error: "",
+      status: 200,
+    });
+    const store = createAppStore();
+    await store.dispatch(googleLoginAuth(new FormData())).unwrap();
+    expect(store.getState().auth.user).toEqual(user);
+    expect(store.getState().auth.loading).toBe(false);
+  });
   it("creates isolated stores and restores the current account", async () => {
     const first = createAppStore(),
       second = createAppStore();

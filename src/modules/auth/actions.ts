@@ -15,7 +15,7 @@ const refreshCookie = "bloghub_refresh";
 
 // Server fetch does not transfer the backend's cookies to the browser automatically.
 async function authRequest(
-  path: "login" | "refresh" | "logout",
+  path: "login" | "refresh" | "logout" | "google",
   body?: object,
 ) {
   const cookieStore = await cookies();
@@ -143,6 +143,16 @@ export async function logoutAction() {
 // The frontend refresh cookie is separate from the backend cookie.
 export async function clearSessionAction() {
   (await cookies()).delete(refreshCookie);
+  if (process.env.AUTH_SECRET) {
+    const { clearGoogleHandoff } = await import("./google");
+    await clearGoogleHandoff();
+  }
+}
+
+export async function finishGoogleSession(idToken: string, password?: string) {
+  // Internal server modules call this after reading the encrypted OAuth cookie.
+  // Re-verification at NestJS means this action also rejects forged identities.
+  return authRequest("google", { idToken, ...(password ? { password } : {}) });
 }
 
 export async function passwordRecoveryAction(

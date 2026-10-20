@@ -2,9 +2,11 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 let requestLog = [], failRequest = null;
-let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes;
+let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes, googleAccounts, auditLogs;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
+  auditLogs = [];
+  googleAccounts = new Map();
   users = [
     {
       id: "author",
@@ -176,6 +178,10 @@ createServer(async (req, res) => {
     res.end(status === 204 ? undefined : JSON.stringify(value));
   };
   if (path === "/__requests") return send(requestLog);
+  if (path === "/__audit-fixtures") {
+    auditLogs = data.items;
+    return send({ ok: true });
+  }
   if (path === "/__fail-request") {
     failRequest = data;
     return send({ ok: true });
@@ -235,10 +241,40 @@ createServer(async (req, res) => {
     );
     return send(undefined, 204);
   }
-  if (path === "/auth/login" || path === "/auth/refresh") {
-    const user = path.endsWith("login")
+  // Test-only Google identities. Real verification is exercised in the NestJS suite.
+  const googleIdentities = {
+    "google-new": { email: "google-new@test.local", displayName: "Google Writer" },
+    "google-author": { email: "author@test.local", displayName: "Google Alex" },
+    "google-other": { email: "other@test.local", displayName: "Google Other" },
+  };
+  const googleIdentity = googleIdentities[data.idToken];
+  if (path === "/auth/google/prepare") {
+    if (!googleIdentity) return send({ message: "Invalid Google ID token" }, 401);
+    const linked = googleAccounts.get(data.idToken);
+    const existing = users.find(account => account.email === googleIdentity.email);
+    return send({ ...googleIdentity, step: linked ? "login" : existing ? "link" : "register" });
+  }
+  let googleUser;
+  if (path === "/auth/google") {
+    if (!googleIdentity) return send({ message: "Invalid Google ID token" }, 401);
+    googleUser = googleAccounts.get(data.idToken);
+    if (!googleUser) {
+      googleUser = users.find(account => account.email === googleIdentity.email);
+      if (googleUser && data.password !== (passwords.get(googleUser.email) || "password123"))
+        return send({ message: "Invalid email or password" }, 401);
+      if (!googleUser) {
+        if (!data.password || data.password.length < 8) return send({ message: "Set a password to complete your account" }, 409);
+        googleUser = { id: randomUUID(), ...googleIdentity, role: "author", status: "active", createdAt: now, updatedAt: now };
+        users.push(googleUser);
+        passwords.set(googleUser.email, data.password);
+      }
+      googleAccounts.set(data.idToken, googleUser);
+    }
+  }
+  if (path === "/auth/login" || path === "/auth/refresh" || path === "/auth/google") {
+    const user = googleUser || (path.endsWith("login")
       ? users.find((user) => user.email === data.email)
-      : sessions.get(cookie);
+      : sessions.get(cookie));
     if (!user || user.status === "disabled" || (path.endsWith("login") && data.password !== (passwords.get(user.email) || "password123"))) return send({ message: "Sign in required" }, 401);
     sessions.delete(cookie);
     const refresh = randomUUID();
@@ -254,6 +290,16 @@ createServer(async (req, res) => {
   const user = access.get(
     (req.headers.authorization || "").replace("Bearer ", ""),
   );
+  if (path === "/auth/google/status") return user ? send({ linked: [...googleAccounts.values()].some(account => account.id === user.id) }) : send({ message: "Sign in required" }, 401);
+  if (path === "/auth/google/link") {
+    if (!user) return send({ message: "Sign in required" }, 401);
+    if (!googleIdentity) return send({ message: "Invalid Google ID token" }, 401);
+    if (data.currentPassword !== (passwords.get(user.email) || "password123")) return send({ message: "Current password is incorrect" }, 401);
+    if (googleIdentity.email !== user.email) return send({ message: "Google email must match your current account email" }, 400);
+    if (googleAccounts.has(data.idToken) && googleAccounts.get(data.idToken).id !== user.id) return send({ message: "Google account already linked" }, 409);
+    googleAccounts.set(data.idToken, user);
+    return send({ message: "Google account linked successfully" });
+  }
   if (path === "/auth/me")
     return user ? send(user) : send({ message: "Sign in required" }, 401);
   if (path === "/auth/change-password") {
@@ -272,6 +318,22 @@ createServer(async (req, res) => {
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  if (path === "/me/blog-audit-logs" && req.method === "GET") {
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 10);
+    const own = auditLogs.filter(log => log.actorId === user.id);
+    const items = own.slice((page - 1) * limit, page * limit).map(log => {
+      const summary = { ...log };
+      delete summary.changes;
+      delete summary.snapshot;
+      return summary;
+    });
+    return send({ items, page, limit, total: own.length, totalPages: Math.ceil(own.length / limit) });
+  }
+  if (path.startsWith("/me/blog-audit-logs/") && req.method === "GET") {
+    const log = auditLogs.find(log => log.id === path.split("/").pop() && log.actorId === user.id);
+    return log ? send(log) : send({ message: "Audit log not found" }, 404);
+  }
   const adminStatus = /^\/admin\/blogs\/([^/]+)\/status$/.exec(path);
   if (adminStatus && req.method === "PATCH") {
     const blog = blogs.find((item) => item.id === adminStatus[1]);
