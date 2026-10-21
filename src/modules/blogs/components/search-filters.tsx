@@ -2,10 +2,11 @@
 import type { Category, Tag } from "@/modules/taxonomy/types";
 import type { Filters } from "@/modules/blogs/types";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { queryString } from "@/lib/utils";
+import VoiceSearchButton from "@/modules/base/components/voice-search-button";
 
 type SearchFiltersProps = {
   categories: Category[];
@@ -21,9 +22,13 @@ export default function SearchFilters({
   const router = useRouter();
   const [category, setCategory] = useState(filters.category || "");
   const [tag, setTag] = useState(filters.tag || "");
+  const searchForm = useRef<HTMLFormElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const categoryId = categories.find((item) => item.slug === category)?.id;
+
   return (
     <form
+      ref={searchForm}
       className="search-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -46,6 +51,7 @@ export default function SearchFilters({
             <path d="m16 16 4.5 4.5" />
           </svg>
           <input
+            ref={searchInput}
             className="form-control"
             aria-label="Search stories"
             name="q"
@@ -55,6 +61,14 @@ export default function SearchFilters({
             placeholder="Find your next great read…"
           />
         </label>
+        <VoiceSearchButton
+          className="button button-secondary voice-search-button"
+          onResult={(text) => {
+            if (!searchInput.current) return;
+            searchInput.current.value = text.slice(0, 200);
+            searchForm.current?.requestSubmit();
+          }}
+        />
         <button className="button button-primary" type="submit">
           Search <span aria-hidden="true">↗</span>
         </button>

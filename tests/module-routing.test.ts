@@ -22,6 +22,7 @@ describe("module manifest routing", () => {
       "/dashboard",
       "/dashboard/posts/new",
       "/dashboard/activity",
+      "/dashboard/notifications",
       "/dashboard/taxonomy",
       "/dashboard/admin/posts",
       "/dashboard/admin/users",

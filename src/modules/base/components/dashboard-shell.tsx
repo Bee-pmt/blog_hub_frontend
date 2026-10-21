@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import { errorMessage } from "@/lib/api-client";
+import NotificationBell from "@/modules/notifications/components/notification-bell";
 export default function DashboardShell({
   children,
   navItems,
@@ -78,25 +79,28 @@ export default function DashboardShell({
         <p className="eyebrow">Your workspace</p>
         <div className="sidebar-account-heading">
           <h2>{user.displayName}</h2>
-          <Link
-            className="sidebar-settings-button"
-            href="/settings"
-            aria-label="Account settings"
-            title="Change password"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden="true"
+          <div className="sidebar-account-actions">
+            <NotificationBell key={user.id} />
+            <Link
+              className="sidebar-settings-button"
+              href="/settings"
+              aria-label="Account settings"
+              title="Change password"
             >
-              <path d="m9 3-.6 2.4-2.1 1.2-2.4-.6-2 3.5 1.8 1.7v2.4L1.9 15l2 3.5 2.4-.6 2.1 1.2L9 21h4l.6-2.4 2.1-1.2 2.4.6 2-3.5-1.8-1.7v-2.4L20.1 9l-2-3.5-2.4.6-2.1-1.2L13 3Z" />
-              <circle cx="11" cy="12" r="3" />
-            </svg>
-          </Link>
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                aria-hidden="true"
+              >
+                <path d="m9 3-.6 2.4-2.1 1.2-2.4-.6-2 3.5 1.8 1.7v2.4L1.9 15l2 3.5 2.4-.6 2.1 1.2L9 21h4l.6-2.4 2.1-1.2 2.4.6 2-3.5-1.8-1.7v-2.4L20.1 9l-2-3.5-2.4.6-2.1-1.2L13 3Z" />
+                <circle cx="11" cy="12" r="3" />
+              </svg>
+            </Link>
+          </div>
         </div>
         <nav aria-label="Workspace navigation">
           {navItems

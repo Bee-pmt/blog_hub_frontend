@@ -820,3 +820,185 @@ test("RTK Query clears private lists when signing out and switching accounts", a
   await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toHaveCount(0);
 });
+
+test("notifications show relative times, paginate, mark read, and keep recipients separate", async ({ page, request }) => {
+  const items = Array.from({ length: 12 }, (_, index) => ({
+    id: `notice-${index}`, userId: "author", type: index === 0 ? "post_unpublished" : "post_deleted",
+    blogId: "story-1", blogTitle: `Moderated story ${index}`,
+    message: index === 0 ? 'An admin unpublished your post "Thoughtful story 1".' : `An admin deleted your post "Story ${index}".`,
+    readAt: null, createdAt: new Date(Date.now() - (index + 1) * 60_000).toISOString(),
+  }));
+  await request.post(`${api}/__notification-fixtures`, { data: { items: [...items, { ...items[0], id: "other-notice", userId: "other", message: "Other user's notification" }] } });
+  await login(page);
+  const bell = page.getByRole("link", { name: "Notifications, 12 unread", exact: true });
+  await expect(bell).toBeVisible();
+  const settings = page.getByRole("link", { name: "Account settings", exact: true });
+  expect(await bell.evaluate((element) => element.parentElement === document.querySelector('.sidebar-settings-button[href="/settings"]')?.parentElement)).toBe(true);
+  await expect(settings).toBeVisible();
+  await bell.click();
+  await expect(page).toHaveURL(/\/dashboard\/notifications$/);
+  const panel = page.getByRole("region", { name: "Notifications", exact: true });
+  await expect(panel.getByRole("heading", { name: "Notifications", exact: true })).toBeVisible();
+  await expect(page.locator(".dashboard-content > section.notification-panel")).toBeVisible();
+  await expect(page.locator("[popover]")).toHaveCount(0);
+  await expect(panel.locator("li")).toHaveCount(10);
+  await panel.screenshot({ path: test.info().outputPath("notifications-desktop.png") });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await panel.screenshot({ path: test.info().outputPath("notifications-dark.png") });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await expect(panel.getByText("1 minute ago", { exact: true })).toBeVisible();
+  await expect(panel.locator("time").first()).toHaveAttribute("title", /\d/);
+  await expect(panel.getByRole("link", { name: "Edit story", exact: true })).toHaveAttribute("href", "/dashboard/posts/story-1/edit");
+  await expect(panel.locator("li").nth(1).getByRole("link")).toHaveCount(0);
+  await expect(panel.getByText("Other user's notification")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Mark as read", exact: true }).first().click();
+  await expect(page.getByRole("link", { name: "Notifications, 11 unread", exact: true })).toBeVisible();
+  await expect(panel.locator("li").first().getByText("Unread", { exact: true })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(panel.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(panel.locator("li")).toHaveCount(2);
+  await panel.getByRole("button", { name: "Mark all as read", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Mark all as read", exact: true })).toBeDisabled();
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "Notifications", exact: true }).click();
+  await expect(panel).toBeVisible();
+  const bounds = await panel.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("notifications-mobile.png"), fullPage: true });
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "other@test.local");
+  await page.getByRole("link", { name: "Notifications, 1 unread", exact: true }).click();
+  await expect(panel.getByText("Other user's notification")).toBeVisible();
+  await expect(panel.getByText(items[0].message, { exact: true })).toHaveCount(0);
+});
+
+test("notifications recover from list and read failures and show an empty state", async ({ page, request }) => {
+  await login(page);
+  const bell = page.getByRole("link", { name: "Notifications", exact: true });
+  await expect(bell).toBeVisible();
+  await request.post(`${api}/__fail-request`, { data: { path: "/me/notifications", method: "GET", message: "Notifications unavailable", status: 503 } });
+  await bell.click();
+  await expect(page).toHaveURL(/\/dashboard\/notifications$/);
+  const panel = page.getByRole("region", { name: "Notifications", exact: true });
+  await expect(panel.getByRole("heading", { name: "Notifications", exact: true })).toBeVisible();
+  await expect(page.locator(".dashboard-content > section.notification-panel")).toBeVisible();
+  await expect(page.locator("[popover]")).toHaveCount(0);
+  await expect(panel.getByRole("alert")).toContainText("Notifications unavailable");
+  await panel.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(panel.getByText("No notifications yet.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
+  await request.post(`${api}/__notification-fixtures`, { data: { items: [{ id: "retry-notice", userId: "author", type: "post_deleted", blogId: "story-1", blogTitle: "Deleted", message: "Deleted story notification", readAt: null, createdAt: new Date().toISOString() }] } });
+  await bell.click();
+  await expect(panel.getByText("Just now", { exact: true })).toBeVisible();
+  await request.post(`${api}/__fail-request`, { data: { path: "/me/notifications/retry-notice/read", method: "PATCH", message: "Unable to mark as read", status: 503 } });
+  await panel.getByRole("button", { name: "Mark as read", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Unable to mark as read");
+  await expect(page.getByRole("link", { name: "Notifications, 1 unread", exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Mark as read", exact: true }).click();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(bell).toBeVisible();
+  await page.reload();
+  await expect(panel.getByText("Deleted story notification", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Mark as read", exact: true })).toHaveCount(0);
+});
+
+async function mockVoiceSearch(page: Page, apiName = "SpeechRecognition") {
+  // Exercise the browser integration without recording audio or calling a speech service.
+  await page.addInitScript((apiName) => {
+    class FakeRecognition {
+      lang = "";
+      continuous = false;
+      interimResults = false;
+      onresult: ((event: { results: { transcript: string }[][] }) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      receive = (event: Event) => {
+        const detail = (event as CustomEvent).detail;
+        if (detail.error) this.onerror?.({ error: detail.error });
+        else this.onresult?.({ results: [[{ transcript: detail.text }]] });
+        window.removeEventListener("voice-test", this.receive);
+        this.onend?.();
+      };
+      start() { window.addEventListener("voice-test", this.receive); }
+      abort() {
+        document.body.dataset.voiceAborted = "true";
+        window.removeEventListener("voice-test", this.receive);
+        this.onerror?.({ error: "aborted" });
+        this.onend?.();
+      }
+    }
+    for (const name of ["SpeechRecognition", "webkitSpeechRecognition"])
+      Object.defineProperty(window, name, { configurable: true, value: name === apiName ? FakeRecognition : undefined });
+  }, apiName);
+}
+
+for (const apiName of ["SpeechRecognition", "webkitSpeechRecognition"]) {
+  test(`voice search fills the existing input and submits current filters using ${apiName}`, async ({ page }) => {
+    await mockVoiceSearch(page, apiName);
+    await page.goto("/?page=2#journal");
+    await page.getByRole("combobox", { name: "Category", exact: true }).selectOption("ideas");
+    await page.getByRole("combobox", { name: "Tag", exact: true }).selectOption("thinking");
+    await page.getByLabel("Search stories", { exact: true }).fill("Replace this");
+    await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Listening" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cancel voice search", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByLabel("Author", { exact: true }).fill("Alex");
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("voice-test", { detail: { text: " story 1 " } })));
+    await expect(page).toHaveURL(/q=story\+1/);
+    await expect(page.getByLabel("Search stories", { exact: true })).toHaveValue("story 1");
+    const params = new URL(page.url()).searchParams;
+    expect(Object.fromEntries(params)).toEqual({ q: "story 1", author: "Alex", category: "ideas", tag: "thinking" });
+    await expect(page.getByText("2 stories", { exact: true }).filter({ visible: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const input = await page.getByLabel("Search stories", { exact: true }).boundingBox();
+    const mic = await page.getByRole("button", { name: "Search by voice", exact: true }).boundingBox();
+    expect(Math.abs(input!.y - mic!.y)).toBeLessThan(10);
+    expect(mic!.x + mic!.width).toBeLessThanOrEqual(390);
+    await page.locator("form.search-form").screenshot({ path: test.info().outputPath("voice-search-mobile.png") });
+  });
+}
+
+test("voice search handles permission errors, cancellation, and navigation cleanup", async ({ page }) => {
+  await mockVoiceSearch(page);
+  await page.goto("/?q=old#journal");
+  await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("voice-test", { detail: { error: "not-allowed" } })));
+  await expect(page.getByRole("status").filter({ hasText: "Allow microphone access" })).toBeVisible();
+  await expect(page.getByLabel("Search stories", { exact: true })).toHaveValue("old");
+  await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel voice search", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Voice search cancelled" })).toBeVisible();
+  await page.evaluate(() => { delete document.body.dataset.voiceAborted; });
+  await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+  await page.getByRole("link", { name: "Clear filters" }).click();
+  await expect(page.getByLabel("Search stories", { exact: true })).toHaveValue("");
+  await expect(page.locator("body")).toHaveAttribute("data-voice-aborted", "true");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("voice-test", { detail: { text: "stale result" } })));
+  expect(new URL(page.url()).searchParams.has("q")).toBe(false);
+  await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+  await page.getByRole("link", { name: "Thoughtful story 1", exact: true }).click();
+  await expect(page).toHaveURL(/\/blogs\/thoughtful-story-1$/);
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Search by voice", exact: true })).toHaveAttribute("aria-pressed", "false");
+});
+
+test("voice search gives an unsupported-browser fallback and preserves typed search", async ({ page }) => {
+  await mockVoiceSearch(page, "unsupported");
+  await page.goto("/#journal");
+  await page.getByRole("button", { name: "Search by voice", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "not supported in this browser" })).toBeVisible();
+  await page.getByLabel("Search stories", { exact: true }).fill("story 1");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/q=story\+1/);
+  await expect(page.getByRole("button", { name: "Search by voice", exact: true })).toBeVisible();
+});

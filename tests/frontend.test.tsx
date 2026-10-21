@@ -14,7 +14,7 @@ import {
 } from "@/lib/api-client";
 import { blogImageUrl, saveBlog } from "@/modules/blogs/api";
 import { localReturnPath } from "@/modules/auth/api";
-import { queryString } from "@/lib/utils";
+import { queryString, relativeTime } from "@/lib/utils";
 import {
   needsSourceMode,
   validatePost,
@@ -42,6 +42,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("API contract", () => {
+  it("formats notification ages without extra date libraries", () => {
+    const now = Date.parse("2026-10-21T12:00:00Z");
+    for (const [seconds, expected] of [
+      [0, "Just now"], [45, "Just now"], [60, "1 minute ago"],
+      [120, "2 minutes ago"], [3600, "1 hour ago"], [86400, "1 day ago"],
+      [604800, "1 week ago"], [2592000, "1 month ago"], [31536000, "1 year ago"],
+    ] as const)
+      expect(relativeTime(new Date(now - seconds * 1000).toISOString(), now)).toBe(expected);
+  });
   it("leaves multipart Content-Type to the browser", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetcher);

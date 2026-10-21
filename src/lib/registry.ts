@@ -4,4 +4,13 @@ import blogs from "@/modules/blogs/manifest";
 import taxonomy from "@/modules/taxonomy/manifest";
 import users from "@/modules/users/manifest";
 import website from "@/modules/website/manifest";
-export const allModules = [base, auth, blogs, taxonomy, users, website];
+import notifications from "@/modules/notifications/manifest";
+export const allModules = [
+  base,
+  auth,
+  blogs,
+  taxonomy,
+  users,
+  website,
+  notifications,
+];

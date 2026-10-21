@@ -3,8 +3,10 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 let requestLog = [], failRequest = null;
 let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes, googleAccounts, auditLogs;
+let notifications;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
+  notifications = [];
   auditLogs = [];
   googleAccounts = new Map();
   users = [
@@ -182,6 +184,10 @@ createServer(async (req, res) => {
     auditLogs = data.items;
     return send({ ok: true });
   }
+  if (path === "/__notification-fixtures") {
+    notifications = data.items;
+    return send({ ok: true });
+  }
   if (path === "/__fail-request") {
     failRequest = data;
     return send({ ok: true });
@@ -318,6 +324,26 @@ createServer(async (req, res) => {
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  if (path === "/me/notifications" && req.method === "GET") {
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 10);
+    const own = notifications.filter(item => item.userId === user.id);
+    return send({ items: own.slice((page - 1) * limit, page * limit), page, limit,
+      total: own.length, totalPages: Math.ceil(own.length / limit),
+      unreadCount: own.filter(item => !item.readAt).length });
+  }
+  if (path === "/me/notifications/read-all" && req.method === "PATCH") {
+    const unread = notifications.filter(item => item.userId === user.id && !item.readAt);
+    unread.forEach(item => { item.readAt = new Date().toISOString(); });
+    return send({ message: "All notifications marked as read", updated: unread.length });
+  }
+  const notificationRead = /^\/me\/notifications\/([^/]+)\/read$/.exec(path);
+  if (notificationRead && req.method === "PATCH") {
+    const item = notifications.find(item => item.id === notificationRead[1] && item.userId === user.id);
+    if (!item) return send({ message: "Notification not found" }, 404);
+    item.readAt ||= new Date().toISOString();
+    return send(item);
+  }
   if (path === "/me/blog-audit-logs" && req.method === "GET") {
     const page = Number(url.searchParams.get("page") || 1);
     const limit = Number(url.searchParams.get("limit") || 10);

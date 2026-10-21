@@ -68,6 +68,8 @@ Account ID or role changes, logout, and session loss reset the entire RTK Query 
 
 `/dashboard/activity` shows the current user's blog audit history. Its list and detail queries live in the existing `blogs/store/services/blogApi.ts`. Story writes invalidate the `BlogAudit` list tag; immutable details are cached by audit-record ID. A native dialog shows old/new values or the retained deletion snapshot. Both authors and admins use the personal `/me/blog-audit-logs` endpoints; there is no admin-wide activity view. Audit content stays in the authenticated RTK Query cache, and raw changes render as text rather than HTML.
 
+The dashboard sidebar includes a notification bell beside account settings. Clicking it opens `/dashboard/notifications` in the main workspace through the notifications manifest. The notification page keeps the Facebook-style rows, relative times, pagination, and read controls. The `notifications` feature injects its list and read mutations into the shared RTK Query API. The badge and page share cached list data and poll every 30 seconds; opening the page refreshes its list. Successful read operations invalidate notification pages and unread counts. These private requests use the existing authenticated browser transport, and account changes clear their cache. Hovering over a relative time shows the full timestamp. No extra Redux slice or backend changes are needed.
+
 ## Public content caching
 
 Public reads follow:

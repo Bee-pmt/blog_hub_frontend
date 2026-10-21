@@ -5,6 +5,7 @@ import { baseApi } from "@/lib/api/baseApi";
 import { blogApi } from "@/modules/blogs/store/services/blogApi";
 import { taxonomyApi } from "@/modules/taxonomy/store/services/taxonomyApi";
 import { userApi } from "@/modules/users/store/services/userApi";
+import { notificationApi } from "@/modules/notifications/store/services/notificationApi";
 import { authenticatedRequest } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
 import { getTaxonomyAction } from "@/modules/taxonomy/actions";
@@ -47,6 +48,23 @@ afterEach(() => {
   stores.length = 0;
 });
 describe("RTK Query content", () => {
+  it("shares notification pages and refreshes unread counts after direct read mutations", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "author", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    vi.mocked(authenticatedRequest).mockClear();
+    await app.dispatch(notificationApi.endpoints.getNotifications.initiate(1)).unwrap();
+    await app.dispatch(notificationApi.endpoints.getNotifications.initiate(1)).unwrap();
+    expect(authenticatedRequest).toHaveBeenCalledTimes(1);
+    await app.dispatch(notificationApi.endpoints.markNotificationRead.initiate("notice-1")).unwrap();
+    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(3));
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/me/notifications/notice-1/read", "PATCH", expect.anything());
+    await app.dispatch(notificationApi.endpoints.markAllNotificationsRead.initiate()).unwrap();
+    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(5));
+    expect(contentRequest).not.toHaveBeenCalled();
+    app.dispatch(sessionEnded());
+    expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
+  });
   it("caches audit pages and immutable details, then refreshes history after a story mutation", async () => {
     const app = store();
     await app.dispatch(blogApi.endpoints.getMyBlogAuditLogs.initiate(1)).unwrap();
