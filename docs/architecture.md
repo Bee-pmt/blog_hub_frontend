@@ -70,6 +70,28 @@ Account ID or role changes, logout, and session loss reset the entire RTK Query 
 
 The dashboard sidebar includes a notification bell beside account settings. Clicking it opens `/dashboard/notifications` in the main workspace through the notifications manifest. The notification page keeps the Facebook-style rows, relative times, pagination, and read controls. The `notifications` feature injects its list and read mutations into the shared RTK Query API. The badge and page share cached list data and poll every 30 seconds; opening the page refreshes its list. Successful read operations invalidate notification pages and unread counts. These private requests use the existing authenticated browser transport, and account changes clear their cache. Hovering over a relative time shows the full timestamp. No extra Redux slice or backend changes are needed.
 
+## Chat: step 1 — conversation list
+
+`/dashboard/chat` is a protected workspace page, opened through the **Messages** sidebar link. This first step displays existing conversations only: the other user's name/initial, last-message preview and timestamp, unread count, and 20 conversations per page. Refresh and retry controls fetch updated results. Empty conversations show “No messages yet.” The backend does not return profile images, so the UI uses an initial instead.
+
+The data flow is `chat/pages/page.tsx` → `useGetConversationsQuery(page)` → shared `baseApi` → `authenticatedRequest` → `apiWrapper` → NestJS `GET /api/v1/chat/conversations?page=1&limit=20`. The existing session helper attaches the access token and handles refresh/retry. RTK Query caches each page separately. Account changes and logout clear these private queries through the existing store listener. No new reducer, auth system, or API client is used.
+
+The new chat files are `types/index.ts` (the backend response shapes), `store/services/chatApi.ts` (the single list query), `pages/page.tsx` (the list UI), and `manifest.ts` (route and sidebar registration). `lib/registry.ts` includes the manifest; `lib/api/baseApi.ts` registers the Conversation cache tag; `app/globals.css` styles the list. Unit tests cover routing, caching, and logout; browser tests and their mock API cover loading, privacy, pagination, refresh, safe text rendering, empty/error states, mobile layout, and guest redirects.
+
+To test with the real backend, sign in and open **Messages**. This uses your actual conversations, not the browser-test fixtures. If there are none, an authenticated `POST /api/v1/chat/conversations` with `{ "recipientId": "<another registered user's UUID>" }` in Swagger/Postman creates or finds one; click **Refresh** to see it. Use the existing `/api/docs` login/Bearer setup. A conversation with no messages displays the empty preview. The backend's chat migration must already be applied: its chat entities disable automatic schema synchronization, so starting NestJS alone cannot create their tables. See the backend's `docs/CHAT.md` for migration instructions. This frontend step does not run migrations or change backend files.
+
+Conversation creation UI, message sending, and Socket.IO remain separate steps. Opening the list or a conversation does not mark messages as read.
+
+## Chat: step 2 — reading message history
+
+Conversation rows are now buttons. `chat/pages/page.tsx` stores the selected conversation ID and renders `chat/components/message-history.tsx`, keyed by the signed-in user and conversation ID. This resets the displayed history when switching conversations or accounts. Desktop shows the list beside history; mobile shows history with a **Back to conversations** button.
+
+`useGetMessagesQuery({ conversationId, page })` uses the same authenticated REST transport for `GET /chat/conversations/:id/messages?page=1&limit=20`. Each conversation/page has its own RTK Query cache entry. Opening history refreshes the latest page. The component keeps loaded pages, removes overlapping message IDs, and sorts by timestamp and ID into chronological order because the backend sends newest first. Messages render as plain text: the current user's bubbles are on the right, other messages on the left. No read receipt is emitted, so unread counts do not change just from opening history.
+
+**Load older messages** loads the next numbered page and keeps the messages already displayed. Two refs track the scroll element and its pre-load position; a layout effect restores the same reading position after prepending messages. The initial load scrolls to the latest message; ordinary re-renders do not force the reader back down. Failure/retry states preserve already loaded history, while forbidden or missing-conversation errors hide cached messages.
+
+To test with your backend, open **Messages** and click an existing conversation. Check the name, timestamps, incoming/outgoing bubbles, empty state, and **Load older messages** when there are more than 20 messages. Switch between conversations, reload the page and reopen a conversation, and test the mobile back button. The browser tests use a mock API; no application messages are created or changed by this frontend work. No message composer, sockets, typing, presence, or read-receipt feature is included yet.
+
 ## Public content caching
 
 Public reads follow:
@@ -144,3 +166,57 @@ The wrapper handles HTTP 204 without parsing JSON, uses a default 15-second time
 Dashboard reads follow component → generated RTK Query hook → baseApi → authenticatedRequest → apiWrapper → NestJS backend. Writes follow mutation hook → contentRequest → content Server Action → apiWrapper → backend. Admin user writes use authenticatedRequest directly. Public pages use module cache functions → feature API → apiWrapper. Authentication uses its actions/API helpers → apiWrapper and cookie response callbacks.
 
 Compared with the earlier positional interface, callers now pass one object and receive status plus data instead of data alone. Compared with Zolotaya's current implementation, BlogHub retains upload support, empty-response handling, timeout/cancellation, cookie callbacks, and richer backend errors. RTK Query still manages dashboard caching and Next.js still manages public caching; the wrapper does neither.
+
+### Chat step 3 — sending a message
+
+`src/modules/chat/components/message-composer.tsx` adds the form below the existing message history. Socket.IO is required because the NestJS backend accepts sends through `message:send`, not a REST POST endpoint. The only new runtime dependency is `socket.io-client`.
+
+The flow is: type text → Send → obtain the existing application access token → authenticated `/chat` socket → `message:send` → NestJS saves the message → acknowledgement → display the saved outgoing bubble and refresh the conversation previews. The socket connects when the form mounts; obtaining the token reuses `withAccessToken`, including its existing refresh logic. Its URL uses the origin of `NEXT_PUBLIC_API_BASE_URL`, so the default is `http://localhost:5300/chat` (not `/api/v1/chat`). The existing backend allowed frontend origins must include the browser's origin.
+
+The form prevents blank messages and messages longer than 2,000 Unicode characters. It waits for server confirmation before showing a bubble. Errors retain the draft. After a missing acknowledgement, sending the unchanged draft again reuses its `clientMessageId`, allowing the backend to return the original saved message without inserting a duplicate. Editing the draft starts a new intended message. There is no automatic message resend or offline send queue.
+
+Connection state and a Reconnect button are shown. Manual reconnect refreshes the existing application session first, which also handles a socket disconnected after access-token expiry. Normal temporary transport failures use Socket.IO reconnection. Switching conversations, leaving the page, or signing out disconnects the form's socket, and a late acknowledgement cannot update the old conversation.
+
+`message-history.tsx` combines confirmed sends with loaded history by server message ID and scrolls to the saved outgoing message. RTK Query still handles REST history and conversation lists; Socket.IO handles the send operation. Incoming live messages, typing indicators, read receipts, and creating a conversation from the UI remain separate steps. The recipient can currently reopen history to see a newly sent message.
+
+To try this step against the real backend, first apply its existing chat migration, start both applications, and open an existing conversation under Messages. Send a short message and check that it appears and remains after reopening the conversation. Sign in as the recipient and open that conversation to read it. No backend code or application database changes were made by this frontend step.
+
+Tests cover the authenticated socket handshake, confirmed sends, backend errors, missing-acknowledgement retries with the same ID, validation, reconnect, and cleanup. Browser tests simulate the Socket.IO wire protocol alongside the existing isolated REST fixtures; they do not use real accounts or the application database.
+
+### Chat step 4 — receiving live messages
+
+The existing socket in `message-composer.tsx` now listens for `message:new` and passes the message to `message-history.tsx`. No additional socket, component, custom hook, dependency, or backend change was added. React's `useEffectEvent` lets socket listeners use the latest callbacks without disconnecting whenever the form or history renders.
+
+The flow is: another user sends → NestJS saves → recipient socket receives `message:new` → matching conversation gets an incoming bubble → RTK Query refreshes the conversation previews and unread counts. Events for other conversations refresh the list but are not inserted into the open conversation. Both REST history and live messages are combined by server message ID, so repeated events or later history fetches show one bubble. Incoming content remains plain text.
+
+If the reader is near the bottom, the new message scrolls into view. If they are reading older messages, their scroll position stays in place. Sending a message still scrolls to the confirmed outgoing bubble.
+
+Every socket connection/reconnection refreshes conversation summaries and restarts history from page 1. The `ChatMessage` RTK Query tag invalidates only the open conversation's history. Invalidation also waits for an already pending history request before refetching, so connecting during the initial read does not skip recovery. Older history can be loaded again with Load older messages; recovery does not fetch the entire conversation at once. Live messages received during recovery are retained and deduplicated with the fetched history.
+
+The socket is active while a conversation is open on the Messages page. Closing the conversation, leaving the page, or signing out removes listeners and disconnects it. This step does not add a global background chat connection. Typing indicators and read receipts are still separate steps; viewing an incoming bubble does not mark it read yet.
+
+To try it: use two browser profiles with different registered users, open the same existing conversation in both, and send in either direction. The recipient should see the new bubble without refreshing. Scroll up and send another message to check that reading position stays put. Disconnect one client, send from the other, then reconnect to recover the saved messages through REST history.
+
+Automated checks use the isolated REST fixtures and simulated Socket.IO packets. They cover live incoming bubbles, duplicate events, plain text, conversation isolation, scroll behavior, reconnect recovery, pagination after recovery, and listener cleanup. No real application database or user accounts are changed.
+
+### Remaining chat controls — read receipts, typing, keyboard, and starting a conversation
+
+The existing chat files now also support these backend features:
+
+- `message-composer.tsx` emits `typing:start` at most once every three seconds while typing, and `typing:stop` after 1.2 seconds of inactivity, on blur, after Send, or before disconnecting. Incoming typing events are restricted to the open conversation and expire after five seconds if the stop event is lost. Disconnecting and switching conversations clear them.
+- Enter sends; Shift+Enter inserts a new line. Enter during IME composition is preserved.
+- Incoming messages are acknowledged with `message:read` only when history has loaded, the reader is at the bottom, the document is visible, and the browser window has focus. The request is briefly batched. Only a successful backend acknowledgement updates the captured message IDs locally; later-arriving messages are handled separately. A failed read update has a retry button.
+- Outgoing bubbles show Sent or Read using the backend's `isRead` field. A received read-receipt event refetches the loaded history pages before updating labels. Its `updated` count is never used to guess which outgoing messages were read. Read acknowledgements refresh canonical unread counts in the conversation list.
+- `chatApi.ts` exposes `useCreateConversationMutation` for the existing authenticated `POST /chat/conversations` endpoint. The page has a Recipient user ID field, Start conversation button, and the signed-in user's own ID for sharing. The backend returns the existing conversation when the pair already exists. Self-chat, invalid IDs, missing recipients, and other failures use the backend's error response. A newly opened conversation is retained even if it is not on the current list page, with the originating account ID attached to keep it separate across account changes.
+
+No user directory or presence endpoint exists in the inspected backend. The UI therefore accepts a user ID rather than inventing a name/email lookup, and Chat connected describes the socket connection only. A reliable recipient online/offline indicator would require a separate backend capability. The socket still belongs to the open conversation; there is no background chat connection outside that view.
+
+For a local smoke test, sign in as two different users in separate browser profiles. Share the user IDs shown on Messages, start the conversation, type to see the indicator, and exchange messages. Check Enter/Shift+Enter, read labels, unread counts, reconnect recovery, and mobile Back navigation. A hidden/unfocused tab or a reader scrolled up should not send a new read acknowledgement.
+
+The tests use isolated REST fixtures and simulated Socket.IO packets. They verify private conversation creation/reuse/errors, authenticated sends, receiving, deduplication, history pagination, scroll preservation, reconnect recovery, typing throttling/expiry/cleanup, focus-gated read acknowledgements, canonical outgoing read labels, and keyboard behavior. These tests do not change the application database or contact real users.
+
+### Chat viewport layout
+
+Opening a conversation uses a compact Messages/Refresh toolbar and hides the inbox description and user-ID form. The full chat panel is sized from its actual top position to the bottom of the visible viewport, leaving a small bottom gap. Header/toolbar resizing, page scrolling, and visual viewport changes update that size. The grid row is explicitly constrained; message history scrolls inside it while the composer keeps its space. Error messages are above the input row so they do not push Send onto an extra row.
+
+On mobile, workspace navigation is hidden while a conversation is open; Back to conversations restores it. The desktop sidebar stays visible. The browser regression check measures both the text field and Send button against the viewport boundaries at 1385×837, 1280×720, 390×844, and 390×600, including a failed-send notice.

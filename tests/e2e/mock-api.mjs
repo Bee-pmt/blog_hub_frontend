@@ -4,8 +4,12 @@ import { randomUUID } from "node:crypto";
 let requestLog = [], failRequest = null;
 let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes, googleAccounts, auditLogs;
 let notifications;
+let chatConversations;
+let chatMessages;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
+  chatConversations = [];
+  chatMessages = [];
   notifications = [];
   auditLogs = [];
   googleAccounts = new Map();
@@ -188,6 +192,12 @@ createServer(async (req, res) => {
     notifications = data.items;
     return send({ ok: true });
   }
+  if (path === "/__chat-fixtures") {
+    // Per-user conversation responses, matching the public chat REST contract.
+    chatConversations = data.items;
+    chatMessages = data.messages || [];
+    return send({ ok: true });
+  }
   if (path === "/__fail-request") {
     failRequest = data;
     return send({ ok: true });
@@ -318,12 +328,52 @@ createServer(async (req, res) => {
     return send({ message: "Password changed successfully. Please log in again." });
   }
   const protectedPath =
+    path.startsWith("/chat/") ||
     path.startsWith("/me/") ||
     path.startsWith("/admin/") ||
     req.method !== "GET";
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  if (path === "/chat/conversations" && req.method === "POST") {
+    const recipient = users.find(item => item.id === data.recipientId);
+    if (!recipient) return send({ message: "Recipient not found" }, 404);
+    if (recipient.id === user.id) return send({ message: "You cannot chat with yourself" }, 400);
+    let conversation = chatConversations.find(item => item.ownerId === user.id && item.otherUser.id === recipient.id);
+    if (!conversation) {
+      const id = randomUUID();
+      conversation = { ownerId: user.id, id, otherUser: { id: recipient.id, displayName: recipient.displayName }, lastMessage: null, unreadCount: 0, createdAt: now, updatedAt: now };
+      chatConversations.push(conversation, { ...conversation, ownerId: recipient.id, otherUser: { id: user.id, displayName: user.displayName } });
+    }
+    const response = { ...conversation };
+    delete response.ownerId;
+    return send(response);
+  }
+  if (path === "/chat/conversations" && req.method === "GET") {
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 20);
+    const own = chatConversations.filter(item => item.ownerId === user.id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+    const items = own.slice((page - 1) * limit, page * limit).map(item => {
+      const response = { ...item };
+      delete response.ownerId;
+      return response;
+    });
+    return send({ items, page, limit, total: own.length, totalPages: Math.ceil(own.length / limit) });
+  }
+  const historyPath = /^\/chat\/conversations\/([^/]+)\/messages$/.exec(path);
+  if (historyPath && req.method === "GET") {
+    const conversationId = decodeURIComponent(historyPath[1]);
+    if (!chatConversations.some(item => item.id === conversationId))
+      return send({ message: "Conversation not found" }, 404);
+    if (!chatConversations.some(item => item.id === conversationId && item.ownerId === user.id))
+      return send({ message: "You are not a participant in this conversation" }, 403);
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 20);
+    const own = chatMessages.filter(item => item.conversationId === conversationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    return send({ items: own.slice((page - 1) * limit, page * limit), page, limit, total: own.length, totalPages: Math.ceil(own.length / limit) });
+  }
   if (path === "/me/notifications" && req.method === "GET") {
     const page = Number(url.searchParams.get("page") || 1);
     const limit = Number(url.searchParams.get("limit") || 10);

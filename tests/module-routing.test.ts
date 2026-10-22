@@ -23,6 +23,7 @@ describe("module manifest routing", () => {
       "/dashboard/posts/new",
       "/dashboard/activity",
       "/dashboard/notifications",
+      "/dashboard/chat",
       "/dashboard/taxonomy",
       "/dashboard/admin/posts",
       "/dashboard/admin/users",
@@ -46,6 +47,7 @@ describe("module manifest routing", () => {
       resolveModuleRoute(["dashboard", "admin", "users"])?.route.access,
     ).toBe("admin");
     expect(resolveModuleRoute(["dashboard"])?.route.access).toBe("account");
+    expect(resolveModuleRoute(["dashboard", "chat"])?.route.access).toBe("account");
     expect(resolveModuleRoute(["unknown"])).toBeNull();
     expect(
       resolveModuleRoute(["dashboard", "posts", "id", "edit", "extra"]),
@@ -65,6 +67,7 @@ describe("module manifest routing", () => {
       "/dashboard/admin/posts",
       "/dashboard/taxonomy",
       "/dashboard/admin/users",
+      "/dashboard/chat",
     ]);
   });
 });

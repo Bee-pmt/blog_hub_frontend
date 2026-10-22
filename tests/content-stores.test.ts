@@ -6,6 +6,7 @@ import { blogApi } from "@/modules/blogs/store/services/blogApi";
 import { taxonomyApi } from "@/modules/taxonomy/store/services/taxonomyApi";
 import { userApi } from "@/modules/users/store/services/userApi";
 import { notificationApi } from "@/modules/notifications/store/services/notificationApi";
+import { chatApi } from "@/modules/chat/store/services/chatApi";
 import { authenticatedRequest } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
 import { getTaxonomyAction } from "@/modules/taxonomy/actions";
@@ -48,6 +49,62 @@ afterEach(() => {
   stores.length = 0;
 });
 describe("RTK Query content", () => {
+  it("refetches recent history when reconnect invalidation arrives during an in-flight read", async () => {
+    const app = store();
+    let finish!: (value: unknown) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const args = { conversationId: "first", page: 1 };
+    const initial = app.dispatch(chatApi.endpoints.getMessages.initiate(args));
+    app.dispatch(chatApi.util.invalidateTags([{ type: "ChatMessage", id: "first" }]));
+    vi.mocked(authenticatedRequest).mockResolvedValue({ ...page, items: [{ id: "missed-message" }] });
+    finish(page);
+    await initial;
+    await vi.waitFor(() => {
+      expect(authenticatedRequest).toHaveBeenCalledTimes(2);
+      expect(chatApi.endpoints.getMessages.select(args)(app.getState()).data?.items).toEqual([{ id: "missed-message" }]);
+    });
+  });
+
+  it("separates message-history conversations and pages, and discards late responses after logout", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "author", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    vi.mocked(authenticatedRequest).mockClear();
+    for (const args of [
+      { conversationId: "first", page: 1 },
+      { conversationId: "first", page: 1 },
+      { conversationId: "first", page: 2 },
+      { conversationId: "second", page: 1 },
+    ]) await app.dispatch(chatApi.endpoints.getMessages.initiate(args)).unwrap();
+    expect(authenticatedRequest).toHaveBeenCalledTimes(3);
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(1, "/chat/conversations/first/messages?page=1&limit=20", "GET", expect.anything());
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/chat/conversations/first/messages?page=2&limit=20", "GET", expect.anything());
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(3, "/chat/conversations/second/messages?page=1&limit=20", "GET", expect.anything());
+    let finish!: (value: unknown) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = app.dispatch(chatApi.endpoints.getMessages.initiate({ conversationId: "private", page: 1 }));
+    app.dispatch(sessionEnded());
+    finish({ ...page, items: [{ id: "private-message", content: "Private history" }] });
+    await pending;
+    expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
+    expect(contentRequest).not.toHaveBeenCalled();
+  });
+  it("caches conversation pages separately and clears private conversations on logout", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "author", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    vi.mocked(authenticatedRequest).mockClear();
+    const first = app.dispatch(chatApi.endpoints.getConversations.initiate(1));
+    const same = app.dispatch(chatApi.endpoints.getConversations.initiate(1));
+    await Promise.all([first.unwrap(), same.unwrap()]);
+    expect(authenticatedRequest).toHaveBeenCalledTimes(1);
+    await app.dispatch(chatApi.endpoints.getConversations.initiate(2)).unwrap();
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(1, "/chat/conversations?page=1&limit=20", "GET", expect.anything());
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/chat/conversations?page=2&limit=20", "GET", expect.anything());
+    expect(contentRequest).not.toHaveBeenCalled();
+    app.dispatch(sessionEnded());
+    expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
+  });
   it("shares notification pages and refreshes unread counts after direct read mutations", async () => {
     const app = store();
     vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "author", role: "author" });

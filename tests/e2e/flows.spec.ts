@@ -1002,3 +1002,456 @@ test("voice search gives an unsupported-browser fallback and preserves typed sea
   await expect(page).toHaveURL(/q=story\+1/);
   await expect(page.getByRole("button", { name: "Search by voice", exact: true })).toBeVisible();
 });
+
+test("conversation list shows private summaries, pagination and mobile layout", async ({ page, request }) => {
+  const items = Array.from({ length: 22 }, (_, index) => {
+    const id = `conversation-${index}`;
+    const createdAt = new Date(Date.UTC(2026, 9, 21, 12) - index * 60_000).toISOString();
+    return {
+      ownerId: "author", id,
+      otherUser: { id: `contact-${index}`, displayName: index === 0 ? "Sam Editor" : `Contact ${index}` },
+      lastMessage: index === 0 ? null : {
+        id: `message-${index}`, conversationId: id, senderId: `contact-${index}`,
+        clientMessageId: `client-${index}`, content: index === 1 ? '<script>alert("unsafe")</script>' : index === 2 ? "Long message ".repeat(100) : `Hello from Contact ${index}`,
+        isRead: false, createdAt,
+      },
+      unreadCount: index === 1 ? 3 : 0, createdAt, updatedAt: createdAt,
+    };
+  });
+  await request.post(`${api}/__chat-fixtures`, { data: { items: [...items, {
+    ...items[0], id: "other-account-conversation", ownerId: "other", otherUser: { id: "author", displayName: "Alex Writer" },
+  }] } });
+  await login(page);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const routePattern = `${api}/chat/conversations?**`;
+  await page.route(routePattern, async route => { await gate; await route.continue(); });
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  try {
+    await expect(page.getByText("Loading conversations…", { exact: true })).toBeVisible();
+  } finally { release(); }
+  await page.unrouteAll({ behavior: "wait" });
+  await expect(page).toHaveURL(/\/dashboard\/chat$/);
+  await expect(page.getByRole("heading", { name: "Messages", exact: true })).toBeVisible();
+  const list = page.getByRole("list", { name: "Conversations", exact: true });
+  await expect(list.getByRole("listitem")).toHaveCount(20);
+  await expect(list.locator(".conversation-name").first()).toHaveText("Sam Editor");
+  await expect(list.getByText("No messages yet.", { exact: true })).toBeVisible();
+  await expect(list.getByLabel("3 unread messages", { exact: true })).toHaveText("3");
+  await expect(list.getByText('<script>alert("unsafe")</script>', { exact: true })).toBeVisible();
+  await expect(list.locator("script")).toHaveCount(0);
+  await expect(list.locator("time").first()).toHaveAttribute("datetime", items[1].lastMessage!.createdAt);
+  await expect(list.locator(".conversation-avatar").first()).toHaveText("S");
+  await expect(list.getByRole("button")).toHaveCount(20);
+  const readRequests = async () => (await (await request.get(`${api}/__requests`)).json()).filter((entry: { path: string }) => entry.path.startsWith("/api/v1/chat/"));
+  await page.getByRole("navigation", { name: "Conversation pages" }).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Page 2 of 2", { exact: true })).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(list.locator(".conversation-name").first()).toHaveText("Contact 20");
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(20);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await list.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("conversations-mobile.png"), fullPage: true });
+  const reads = await readRequests();
+  expect(reads.every((entry: { path: string; method: string }) => entry.method === "GET" && entry.path.startsWith("/api/v1/chat/conversations?"))).toBe(true);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "other@test.local");
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("button", { name: "Open conversation with Alex Writer", exact: true })).toBeVisible();
+  await expect(list.getByText("Sam Editor", { exact: true })).toHaveCount(0);
+});
+
+test("conversation list protects guests and handles empty results and API errors", async ({ page, request }) => {
+  await page.goto("/dashboard/chat");
+  await expect(page).toHaveURL(/\/login\?returnTo=/);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/dashboard/chat");
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No conversations yet.", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Conversation pages" })).toHaveCount(0);
+  await request.post(`${api}/__fail-request`, { data: { path: "/chat/conversations", method: "GET", status: 503, message: "Conversations temporarily unavailable" } });
+  await page.reload();
+  await expect(page.locator("main [role=alert]")).toContainText("Conversations temporarily unavailable");
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No conversations yet.", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Messages", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No conversations yet.", exact: true })).toBeVisible();
+});
+
+function messageHistoryFixture() {
+  const first = "11111111-1111-4111-8111-111111111111";
+  const second = "22222222-2222-4222-8222-222222222222";
+  const messages = Array.from({ length: 45 }, (_, index) => ({
+    id: `history-${String(index + 1).padStart(3, "0")}`, conversationId: first,
+    senderId: (index + 1) % 2 === 0 ? "author" : "admin", clientMessageId: `client-${index}`,
+    content: index === 30 ? 'Message 31 <script>alert("unsafe")</script>' : index === 44 ? "Newest long message ".repeat(80) : `Message ${index + 1}`,
+    isRead: false, createdAt: new Date(Date.UTC(2026, 9, 21, 12, index + 1)).toISOString(),
+  }));
+  const reply = { ...messages[0], id: "other-reply", conversationId: second, senderId: "other", content: "A private reply from Other Writer." };
+  const items = [
+    { ownerId: "author", id: first, otherUser: { id: "admin", displayName: "Sam Editor" }, lastMessage: messages[44], unreadCount: 23, createdAt: messages[0].createdAt, updatedAt: messages[44].createdAt },
+    { ownerId: "author", id: second, otherUser: { id: "other", displayName: "Other Writer" }, lastMessage: reply, unreadCount: 1, createdAt: reply.createdAt, updatedAt: reply.createdAt },
+  ];
+  return { first, second, items, messages: [...messages, reply] };
+}
+
+test("message history orders bubbles, loads older pages without duplicates or scroll jumps, and supports mobile back", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  await request.post(`${api}/__chat-fixtures`, { data: fixture });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  const open = page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true });
+  await open.click();
+  await expect(open).toHaveAttribute("aria-pressed", "true");
+  const history = page.getByRole("region", { name: "Message history", exact: true });
+  const messages = history.locator(".chat-message");
+  await expect(messages).toHaveCount(20);
+  await expect(messages.first()).toHaveAttribute("data-message-id", "history-026");
+  await expect(messages.last()).toHaveAttribute("data-message-id", "history-045");
+  expect(await history.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+  expect(await history.locator('[data-message-id="history-044"]').evaluate(element => getComputedStyle(element).alignSelf)).toBe("flex-end");
+  expect(await history.locator('[data-message-id="history-045"]').evaluate(element => getComputedStyle(element).alignSelf)).toBe("flex-start");
+  await expect(history.locator("time").first()).toHaveAttribute("datetime", fixture.messages[25].createdAt);
+  await expect(history.getByText('Message 31 <script>alert("unsafe")</script>', { exact: true })).toHaveCount(1);
+  await expect(history.locator("script")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Conversations", exact: true }).getByLabel("23 unread messages")).toHaveText("23");
+  // A new message shifts offset pagination, so one message overlaps two pages.
+  const newer = { ...fixture.messages[44], id: "history-046", content: "Message 46", createdAt: new Date(Date.UTC(2026, 9, 21, 12, 46)).toISOString() };
+  await request.post(`${api}/__chat-fixtures`, { data: { items: fixture.items, messages: [...fixture.messages, newer] } });
+  await history.evaluate(element => { element.scrollTop = 0; });
+  const anchor = history.locator('[data-message-id="history-026"]');
+  const before = (await anchor.boundingBox())!.y;
+  await history.getByRole("button", { name: "Load older messages", exact: true }).click();
+  await expect(messages).toHaveCount(39);
+  expect(Math.abs((await anchor.boundingBox())!.y - before)).toBeLessThan(3);
+  await history.getByRole("button", { name: "Load older messages", exact: true }).click();
+  await expect(messages).toHaveCount(45);
+  await expect(messages.first()).toHaveAttribute("data-message-id", "history-001");
+  await expect(history.getByRole("button", { name: "Load older messages", exact: true })).toHaveCount(0);
+  expect(new Set(await messages.evaluateAll(elements => elements.map(element => element.getAttribute("data-message-id")))).size).toBe(45);
+  await history.evaluate(element => { element.scrollTop = 50; });
+  await page.locator(".chat-layout").screenshot({ path: test.info().outputPath("history-desktop.png") });
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  await expect(messages).toHaveCount(1);
+  await expect(history.getByText("A private reply from Other Writer.", { exact: true })).toBeVisible();
+  await expect(history.locator('[data-message-id="history-001"]')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".chat-conversations")).toBeHidden();
+  expect(await history.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("history-mobile.png"), fullPage: true });
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Conversations", exact: true })).toBeVisible();
+  await expect(history).toHaveCount(0);
+  const reads = (await (await request.get(`${api}/__requests`)).json()).filter((entry: { path: string }) => entry.path.startsWith("/api/v1/chat/"));
+  expect(reads.every((entry: { method: string }) => entry.method === "GET")).toBe(true);
+});
+
+test("message history retries failures and handles empty, missing, and forbidden conversations", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  await request.post(`${api}/__chat-fixtures`, { data: fixture });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await request.post(`${api}/__fail-request`, { data: { path: `/chat/conversations/${fixture.first}/messages`, method: "GET", status: 503, message: "Messages temporarily unavailable" } });
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  const history = page.getByRole("region", { name: "Message history", exact: true });
+  await expect(history.getByRole("alert")).toContainText("Messages temporarily unavailable");
+  await history.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(history.locator(".chat-message")).toHaveCount(20);
+  await request.post(`${api}/__fail-request`, { data: { path: `/chat/conversations/${fixture.first}/messages`, method: "GET", status: 503, message: "Unable to load older messages" } });
+  await history.getByRole("button", { name: "Load older messages", exact: true }).click();
+  await expect(history.getByRole("alert")).toContainText("Unable to load older messages");
+  await expect(history.locator(".chat-message")).toHaveCount(20);
+  await history.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(history.locator(".chat-message")).toHaveCount(40);
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await request.post(`${api}/__chat-fixtures`, { data: { items: fixture.items, messages: [] } });
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  await expect(history.getByText("No messages yet.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await request.post(`${api}/__chat-fixtures`, { data: { items: [fixture.items[0]], messages: fixture.messages } });
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  await expect(history.getByRole("alert")).toContainText("Conversation not found");
+  await expect(history.locator(".chat-message")).toHaveCount(0);
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await request.post(`${api}/__chat-fixtures`, { data: { items: [{ ...fixture.items[0], ownerId: "other" }], messages: fixture.messages } });
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  await expect(history.getByRole("alert")).toContainText("not a participant");
+  await expect(history.locator(".chat-message")).toHaveCount(0);
+});
+
+test("message history ignores late responses and resets on account changes", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  await request.post(`${api}/__chat-fixtures`, { data: { ...fixture, items: [...fixture.items, {
+    ...fixture.items[1], ownerId: "other", otherUser: { id: "author", displayName: "Alex Writer" },
+  }] } });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`${api}/chat/conversations/${fixture.first}/messages?**`, async route => { await gate; await route.continue(); });
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  await expect(page.getByText("Loading messages…", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  const history = page.getByRole("region", { name: "Message history", exact: true });
+  try {
+    await expect(history.getByText("A private reply from Other Writer.", { exact: true })).toBeVisible();
+  } finally { release(); }
+  await page.unrouteAll({ behavior: "wait" });
+  await expect(history.locator(".chat-message")).toHaveCount(1);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "other@test.local");
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open conversation with Alex Writer", exact: true }).click();
+  await expect(history.locator(".chat-message")).toHaveCount(1);
+  await expect(history.locator(".chat-message-outgoing")).toHaveText(/A private reply from Other Writer/);
+  await expect(history.locator('[data-message-id="history-026"]')).toHaveCount(0);
+});
+
+test("chat sends confirmed messages through the authenticated socket and preserves failed drafts", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  await request.post(`${api}/__chat-fixtures`, { data: fixture });
+  const payloads: { conversationId: string; clientMessageId: string; content: string }[] = [];
+  let authenticated = false;
+  await page.routeWebSocket("**/socket.io/**", websocket => {
+    websocket.onMessage(raw => {
+      const packet = raw.toString();
+      if (packet.startsWith("40/chat,")) {
+        authenticated = !!JSON.parse(packet.slice("40/chat,".length)).accessToken;
+        websocket.send('40/chat,{"sid":"test-chat-socket"}');
+      }
+      const match = packet.match(/^42\/chat,(\d+)(.*)$/);
+      if (!match) return;
+      const [event, payload] = JSON.parse(match[2]);
+      if (event === "message:read") {
+        websocket.send(`43/chat,${match[1]}${JSON.stringify([{ ok: true, data: { conversationId: payload.conversationId, readerId: "author", updated: 0 } }])}`);
+        return;
+      }
+      expect(event).toBe("message:send");
+      payloads.push(payload);
+      const reply = payload.content === "Please fail"
+        ? { ok: false, error: { code: "RATE_LIMITED", message: "Please wait before sending again." } }
+        : { ok: true, data: { created: true, message: {
+          ...payload, id: "saved-through-socket", senderId: "author", isRead: false, createdAt: "2026-10-21T20:00:00Z",
+        } } };
+      websocket.send(`43/chat,${match[1]}${JSON.stringify([reply])}`);
+    });
+    websocket.send('0{"sid":"test-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  const composer = page.locator(".chat-composer");
+  await expect(composer.getByRole("status")).toHaveText("Chat connected");
+  expect(authenticated).toBe(true);
+  const input = composer.getByLabel("Message", { exact: true });
+  await input.fill("Hello from the chat form");
+  await composer.getByRole("button", { name: "Send", exact: true }).click();
+  const history = page.getByRole("region", { name: "Message history", exact: true });
+  await expect(history.locator('[data-message-id="saved-through-socket"]')).toHaveClass(/chat-message-outgoing/);
+  await expect(input).toHaveValue("");
+  expect(payloads[0]).toMatchObject({ conversationId: fixture.first, content: "Hello from the chat form" });
+  expect(payloads[0].clientMessageId).toMatch(/^[0-9a-f-]{36}$/);
+  await input.fill("Please fail");
+  await composer.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(composer.getByRole("alert")).toHaveText("Please wait before sending again.");
+  await expect(input).toHaveValue("Please fail");
+  await expect(history.locator('[data-message-id="saved-through-socket"]')).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const viewport of [
+    { width: 1385, height: 837 },
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+    { width: 390, height: 600 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect.poll(async () => {
+      const field = await input.boundingBox();
+      const send = await composer.getByRole("button", { name: "Send", exact: true }).boundingBox();
+      const metrics = await page.locator(".chat-layout").evaluate(element => ({
+        top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height,
+        scrollY: window.scrollY, viewportHeight: window.innerHeight,
+        visualHeight: window.visualViewport?.height,
+      }));
+      return { field, send, metrics, fits: !!field && !!send && field.y >= 0 && send.y >= 0 &&
+        field.y + field.height <= viewport.height && send.y + send.height <= viewport.height };
+    }, { message: `Message field and Send must fit inside ${viewport.width}×${viewport.height} without page scrolling` }).toMatchObject({ fits: true });
+  }
+  await page.setViewportSize({ width: 1385, height: 837 });
+  await page.screenshot({ path: test.info().outputPath("chat-viewport-desktop.png") });
+  await composer.screenshot({ path: test.info().outputPath("chat-composer-mobile.png") });
+});
+
+test("chat receives live messages without duplicates, preserves reading position, and recovers after reconnect", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  await request.post(`${api}/__chat-fixtures`, { data: fixture });
+  let deliver!: (message: (typeof fixture.messages)[number]) => void;
+  let disconnect!: () => void;
+  const events: string[] = [];
+  await page.routeWebSocket("**/socket.io/**", websocket => {
+    deliver = message => websocket.send(`42/chat,${JSON.stringify(["message:new", message])}`);
+    disconnect = () => websocket.send("41/chat,");
+    websocket.onMessage(raw => {
+      const packet = raw.toString();
+      if (packet.startsWith("40/chat,")) websocket.send('40/chat,{"sid":"live-test-chat"}');
+      const match = packet.match(/^42\/chat,(?:\d+)?(.*)$/);
+      if (match) {
+        const [event] = JSON.parse(match[1]);
+        events.push(event);
+        const ack = packet.match(/^42\/chat,(\d+)/);
+        if (event === "message:read" && ack)
+          websocket.send(`43/chat,${ack[1]}${JSON.stringify([{ ok: true, data: { updated: 0 } }])}`);
+      }
+    });
+    websocket.send('0{"sid":"live-test-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  const history = page.getByRole("region", { name: "Message history", exact: true });
+  const messages = history.locator(".chat-message");
+  await expect(page.locator(".chat-composer").getByRole("status")).toHaveText("Chat connected");
+  await expect(messages).toHaveCount(20);
+  const incoming = { ...fixture.messages[0], id: "live-incoming", clientMessageId: "live-client", content: 'Hello live <script>alert("unsafe")</script>', createdAt: "2026-10-21T15:00:00Z" };
+  const items = fixture.items.map(item => item.id === fixture.first ? { ...item, lastMessage: incoming, unreadCount: 24, updatedAt: incoming.createdAt } : item);
+  await request.post(`${api}/__chat-fixtures`, { data: { items, messages: [...fixture.messages, incoming] } });
+  deliver(incoming);
+  await expect(messages).toHaveCount(21);
+  await expect(history.locator('[data-message-id="live-incoming"]')).toHaveClass(/chat-message-incoming/);
+  await expect(history.getByText(incoming.content, { exact: true })).toBeVisible();
+  await expect(page.locator(".conversation-preview").filter({ hasText: "Hello live" })).toBeVisible();
+  await expect(page.getByLabel("24 unread messages", { exact: true })).toBeVisible();
+  expect(await history.locator("script").count()).toBe(0);
+  expect(await history.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThan(3);
+  deliver(incoming);
+  await expect(history.locator('[data-message-id="live-incoming"]')).toHaveCount(1);
+  await history.evaluate(element => { element.scrollTop = 50; });
+  const another = { ...incoming, id: "live-second", clientMessageId: "live-client-2", content: "Arrived while reading older messages", createdAt: "2026-10-21T15:01:00Z" };
+  deliver(another);
+  await expect(messages).toHaveCount(22);
+  expect(await history.evaluate(element => element.scrollTop)).toBe(50);
+  deliver({ ...incoming, id: "other-conversation-event", conversationId: fixture.second, senderId: "other", content: "A message in the other conversation" });
+  await expect(history.locator('[data-message-id="other-conversation-event"]')).toHaveCount(0);
+  disconnect();
+  await expect(page.locator(".chat-composer").getByRole("status")).toContainText("Chat disconnected");
+  const offline = { ...incoming, id: "offline-incoming", clientMessageId: "offline-client", content: "Saved while you were offline", createdAt: "2026-10-21T15:02:00Z" };
+  await request.post(`${api}/__chat-fixtures`, { data: { items, messages: [...fixture.messages, incoming, another, offline] } });
+  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await expect(page.locator(".chat-composer").getByRole("status")).toHaveText("Chat connected");
+  await expect(history.locator('[data-message-id="offline-incoming"]')).toBeVisible();
+  await expect(history.locator('[data-message-id="live-incoming"]')).toHaveCount(1);
+  await history.getByRole("button", { name: "Load older messages", exact: true }).click();
+  await expect(messages).toHaveCount(40);
+  await history.getByRole("button", { name: "Load older messages", exact: true }).click();
+  await expect(messages).toHaveCount(48);
+  expect(new Set(await messages.evaluateAll(elements => elements.map(element => element.getAttribute("data-message-id")))).size).toBe(48);
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  await expect(history.getByText("A private reply from Other Writer.", { exact: true })).toBeVisible();
+  deliver(incoming);
+  await expect(history.locator('[data-message-id="live-incoming"]')).toHaveCount(0);
+  expect(events.every(event => event === "message:read")).toBe(true);
+});
+
+test("chat starts and reuses private conversations and shows recipient errors", async ({ page, request }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await page.getByLabel("Recipient user ID", { exact: true }).fill("other");
+  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Message history", exact: true }).getByText("No messages yet.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await page.getByLabel("Recipient user ID", { exact: true }).fill("other");
+  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open conversation with Other Writer", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Close conversation", exact: true }).click();
+  await page.getByLabel("Recipient user ID", { exact: true }).fill("author");
+  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await expect(page.locator(".chat-start [role=alert]")).toContainText("cannot chat with yourself");
+  await page.getByLabel("Recipient user ID", { exact: true }).fill("unknown");
+  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await expect(page.locator(".chat-start [role=alert]")).toContainText("Recipient not found");
+  const requests = await (await request.get(`${api}/__requests`)).json();
+  expect(requests.filter((entry: { path: string; method: string }) => entry.path === "/api/v1/chat/conversations" && entry.method === "POST")).toHaveLength(4);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "other@test.local");
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open conversation with Alex Writer", exact: true })).toBeVisible();
+});
+
+test("chat typing, keyboard sending, and canonical read receipts work together", async ({ page, request }) => {
+  const fixture = messageHistoryFixture();
+  let messages = [...fixture.messages];
+  let items = [...fixture.items];
+  await request.post(`${api}/__chat-fixtures`, { data: { items, messages } });
+  const events: string[] = [];
+  let deliver!: (event: string, data: object) => void;
+  await page.routeWebSocket("**/socket.io/**", websocket => {
+    deliver = (event, data) => websocket.send(`42/chat,${JSON.stringify([event, data])}`);
+    websocket.onMessage(async raw => {
+      const packet = raw.toString();
+      if (packet.startsWith("40/chat,")) websocket.send('40/chat,{"sid":"additional-features"}');
+      const match = packet.match(/^42\/chat,(\d*)(.*)$/);
+      if (!match) return;
+      const [event, payload] = JSON.parse(match[2]);
+      events.push(event);
+      if (!match[1]) return;
+      if (event === "message:read") {
+        messages = messages.map(message => message.conversationId === payload.conversationId && message.senderId !== "author" ? { ...message, isRead: true } : message);
+        items = items.map(item => item.id === payload.conversationId ? { ...item, unreadCount: 0 } : item);
+        await request.post(`${api}/__chat-fixtures`, { data: { items, messages } });
+        websocket.send(`43/chat,${match[1]}${JSON.stringify([{ ok: true, data: { conversationId: payload.conversationId, readerId: "author", updated: 23 } }])}`);
+      }
+      if (event === "message:send") {
+        const message = { ...payload, id: "keyboard-sent", senderId: "author", isRead: false, createdAt: "2026-10-22T10:00:00Z" };
+        messages.push(message);
+        await request.post(`${api}/__chat-fixtures`, { data: { items, messages } });
+        websocket.send(`43/chat,${match[1]}${JSON.stringify([{ ok: true, data: { message, created: true } }])}`);
+      }
+    });
+    websocket.send('0{"sid":"feature-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Messages", exact: true }).click();
+  await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
+  const composer = page.locator(".chat-composer");
+  await expect(composer.getByText("Chat connected", { exact: true })).toBeVisible();
+  const input = composer.getByLabel("Message", { exact: true });
+  await input.focus();
+  await expect.poll(() => events.filter(event => event === "message:read").length).toBeGreaterThan(0);
+  await expect(page.getByLabel("23 unread messages", { exact: true })).toHaveCount(0);
+  deliver("typing:start", { conversationId: fixture.second, userId: "other" });
+  await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toHaveCount(0);
+  deliver("typing:start", { conversationId: fixture.first, userId: "admin" });
+  await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toBeVisible();
+  deliver("typing:stop", { conversationId: fixture.first, userId: "admin" });
+  await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toHaveCount(0);
+  await input.fill("First line");
+  await input.press("Shift+Enter");
+  await input.press("End");
+  await input.press("B");
+  expect(events.filter(event => event === "message:send")).toHaveLength(0);
+  await expect.poll(() => events.filter(event => event === "typing:start").length).toBe(1);
+  await input.press("Enter");
+  const sent = page.locator('[data-message-id="keyboard-sent"]');
+  await expect(sent).toContainText("First line");
+  await expect(sent.locator(".chat-read-status")).toHaveText("Sent");
+  await expect(input).toHaveValue("");
+  expect(events).toContain("typing:stop");
+  messages = messages.map(message => message.id === "keyboard-sent" ? { ...message, isRead: true } : message);
+  await request.post(`${api}/__chat-fixtures`, { data: { items, messages } });
+  deliver("message:read", { conversationId: fixture.first, readerId: "admin", updated: 1 });
+  await expect(sent.locator(".chat-read-status")).toHaveText("Read");
+  deliver("typing:start", { conversationId: fixture.first, userId: "admin" });
+  await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open conversation with Other Writer", exact: true }).click();
+  await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toHaveCount(0);
+});

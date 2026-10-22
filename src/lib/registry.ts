@@ -5,6 +5,7 @@ import taxonomy from "@/modules/taxonomy/manifest";
 import users from "@/modules/users/manifest";
 import website from "@/modules/website/manifest";
 import notifications from "@/modules/notifications/manifest";
+import chat from "@/modules/chat/manifest";
 export const allModules = [
   base,
   auth,
@@ -13,4 +14,5 @@ export const allModules = [
   users,
   website,
   notifications,
+  chat,
 ];
