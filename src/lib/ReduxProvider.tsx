@@ -8,6 +8,7 @@ import {
   setAuthChannel,
 } from "@/modules/auth/store/slices/authSlice";
 import { clearSession } from "./session";
+import ChatProvider from "@/modules/chat/components/chat-provider";
 
 export default function ReduxProvider({ children }: { children: ReactNode }) {
   const [store] = useState(createAppStore);
@@ -32,5 +33,5 @@ export default function ReduxProvider({ children }: { children: ReactNode }) {
       store.dispatch(sessionEnded());
     };
   }, [store]);
-  return <Provider store={store}>{children}</Provider>;
+  return <Provider store={store}><ChatProvider>{children}</ChatProvider></Provider>;
 }

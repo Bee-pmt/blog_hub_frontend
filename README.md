@@ -20,7 +20,7 @@ In the sibling backend repository, configure its database and authentication env
 
 Sign-in and registration forms call Server Actions in `src/modules/auth/actions.ts`. Next.js stores the backend refresh token in a frontend HttpOnly cookie and forwards it for server-side refresh and sign-out. The access token stays in browser memory for authenticated API calls. The Next.js server must be able to reach `NEXT_PUBLIC_API_BASE_URL`. Existing sessions created before this change may require signing in again.
 
-The backend uses schema synchronization. No backend startup, seeding, reset, admin creation, or schema change is performed by this frontend. Use an existing admin account for admin views; public registration creates authors.
+The backend owns database schema setup. Chat tables and message-deletion support require the registered backend migrations; see its chat setup documentation. No backend startup, seeding, reset, admin creation, or schema change is performed by this frontend. Use an existing admin account for admin views; public registration creates authors.
 
 ## Checks
 
@@ -63,7 +63,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run test:e2e
 
 The real backend was offline during implementation. After starting it, use disposable accounts/content to check registration, login/reload/refresh/logout, taxonomy creation, draft saving/recovery, publication/unpublication, stable slugs, and ownership. With an existing admin, verify moderation and category deletion consequences. Clean up only the disposable content you created.
 
-The dependency audit reports five high advisories in the existing Next.js ESLint toolchain (`braces` and its parent packages). These are development dependencies; no automatic force downgrade was applied. Recheck upstream fixes before a release.
+Run `npm audit` after dependency updates. The latest frontend audit resolved the reported development-tool advisories through targeted updates, without adding runtime dependencies or forcing a framework downgrade.
 
 ## Password management
 

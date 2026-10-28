@@ -5,6 +5,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Markdown as MarkdownExtension } from "@tiptap/markdown";
+import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 import Markdown, { safeMarkdownUrl } from "@/modules/blogs/components/markdown";
 import {
   API_BASE,
@@ -42,6 +43,21 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("API contract", () => {
+  it("gives confirmation dialogs separate accessible labels when cached pages coexist", () => {
+    const element = document.createElement("div");
+    element.innerHTML = renderToStaticMarkup(<>
+      <ConfirmDialog title="First action" message="First description" busy={false} onCancel={() => {}} onConfirm={() => {}} />
+      <ConfirmDialog title="Second action" message="Second description" busy={false} onCancel={() => {}} onConfirm={() => {}} />
+    </>);
+    const dialogs = element.querySelectorAll("dialog");
+    const titles = Array.from(dialogs, dialog => dialog.getAttribute("aria-labelledby"));
+    expect(new Set(titles).size).toBe(2);
+    for (const dialog of dialogs) {
+      expect(dialog.querySelector("h2")!.id).toBe(dialog.getAttribute("aria-labelledby"));
+      expect(dialog.querySelector("p")!.id).toBe(dialog.getAttribute("aria-describedby"));
+    }
+  });
+
   it("formats notification ages without extra date libraries", () => {
     const now = Date.parse("2026-10-21T12:00:00Z");
     for (const [seconds, expected] of [

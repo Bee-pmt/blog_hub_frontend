@@ -7,6 +7,7 @@ import { taxonomyApi } from "@/modules/taxonomy/store/services/taxonomyApi";
 import { userApi } from "@/modules/users/store/services/userApi";
 import { notificationApi } from "@/modules/notifications/store/services/notificationApi";
 import { chatApi } from "@/modules/chat/store/services/chatApi";
+import { ApiError } from "@/lib/api-client";
 import { authenticatedRequest } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
 import { getTaxonomyAction } from "@/modules/taxonomy/actions";
@@ -49,6 +50,70 @@ afterEach(() => {
   stores.length = 0;
 });
 describe("RTK Query content", () => {
+  it("does not sign out a new account when a previous account's request fails late", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "old", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    let fail!: (error: Error) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const oldRequest = app.dispatch(chatApi.endpoints.getConversations.initiate(1));
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "new", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    fail(new ApiError("Old session expired", 401));
+    await oldRequest;
+    expect(app.getState().auth.user?.id).toBe("new");
+  });
+
+  it("does not sign out a new account when an old file-upload mutation fails late", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "old", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    let fail!: (error: Error) => void;
+    vi.mocked(contentRequest).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const oldRequest = app.dispatch(blogApi.endpoints.saveBlog.initiate({ input: { title: "Draft", content: "Text", tagIds: [], status: "draft" }, image: null }));
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "new", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    fail(new ApiError("Old session expired", 401));
+    await oldRequest;
+    expect(app.getState().auth.user?.id).toBe("new");
+  });
+
+  it("totals unread messages across every conversation page without counting overlaps twice", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest)
+      .mockResolvedValueOnce({ ...page, totalPages: 2, items: Array.from({ length: 50 }, (_, i) => ({ id: `chat-${i}`, unreadCount: 2 })) })
+      .mockResolvedValueOnce({ ...page, page: 2, totalPages: 2, items: [{ id: "chat-49", unreadCount: 2 }, { id: "chat-50", unreadCount: 3 }] });
+    const result = await app.dispatch(chatApi.endpoints.getUnreadChatCount.initiate()).unwrap();
+    expect(result.unreadCount).toBe(103);
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(1, "/chat/conversations?page=1&limit=50", "GET", expect.anything());
+    expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/chat/conversations?page=2&limit=50", "GET", expect.anything());
+  });
+
+  it("does not publish a partial unread total if a later page fails", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest)
+      .mockResolvedValueOnce({ ...page, totalPages: 2, items: [{ id: "first", unreadCount: 3 }] })
+      .mockRejectedValueOnce(new Error("Unavailable"));
+    const result = await app.dispatch(chatApi.endpoints.getUnreadChatCount.initiate());
+    expect(result.error).toBeDefined();
+    expect(result.data).toBeUndefined();
+  });
+
+  it("stops loading unread pages and discards the total when the account changes", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "author", role: "author" });
+    await app.dispatch(restoreAuth()).unwrap();
+    vi.mocked(authenticatedRequest).mockClear();
+    let finish!: (value: unknown) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = app.dispatch(chatApi.endpoints.getUnreadChatCount.initiate());
+    app.dispatch(sessionEnded());
+    finish({ ...page, totalPages: 2, items: [{ id: "private", unreadCount: 4 }] });
+    await pending;
+    expect(authenticatedRequest).toHaveBeenCalledTimes(1);
+    expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
+  });
+
   it("refetches recent history when reconnect invalidation arrives during an in-flight read", async () => {
     const app = store();
     let finish!: (value: unknown) => void;

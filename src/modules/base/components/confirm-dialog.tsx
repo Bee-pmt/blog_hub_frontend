@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 type ConfirmDialogProps = {
   confirmLabel?: string;
   busyLabel?: string;
@@ -20,6 +20,8 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -30,15 +32,15 @@ export default function ConfirmDialog({
     <dialog
       ref={ref}
       className="confirm-dialog"
-      aria-labelledby="confirm-title"
-      aria-describedby="confirm-description"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onCancel();
       }}
     >
-      <h2 id="confirm-title">{title}</h2>
-      <p id="confirm-description">{message}</p>
+      <h2 id={titleId}>{title}</h2>
+      <p id={descriptionId}>{message}</p>
       <div className="actions">
         <button
           className="button button-secondary"

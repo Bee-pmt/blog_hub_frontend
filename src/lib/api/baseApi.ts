@@ -4,6 +4,7 @@ import type { BaseQueryFn } from "@reduxjs/toolkit/query";
 import { ApiError, errorMessage } from "@/lib/api-client";
 import { authenticatedRequest, clearSession } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
+import type { RootState } from "@/lib/store";
 import { sessionEnded } from "@/modules/auth/store/slices/authSlice";
 
 export type RequestArgs = {
@@ -17,6 +18,7 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
   args,
   api,
 ) => {
+  const session = (api.getState() as RootState).auth;
   try {
     const send =
       args.direct || !args.method || args.method === "GET"
@@ -28,7 +30,7 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
     return { data: data ?? null };
   } catch (failure) {
     const status = failure instanceof ApiError ? failure.status : 0;
-    if (status === 401) {
+    if (status === 401 && (api.getState() as RootState).auth === session) {
       clearSession();
       api.dispatch(sessionEnded());
     }

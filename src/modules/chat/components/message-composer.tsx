@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
-import { API_BASE, errorMessage } from "@/lib/api-client";
-import { refreshSession, withAccessToken } from "@/lib/session";
+import { useChatConnection } from "./chat-provider";
 import type { ChatMessage } from "../types";
 
 type SendReply =
@@ -29,7 +27,8 @@ export default function MessageComposer({
   onReadReceipt?: () => void;
   recipientName?: string;
 }) {
-  const socket = useRef<Socket | null>(null);
+  const { socket: connection, connectionError, reconnect } = useChatConnection();
+  const socket = useRef<typeof connection | null>(connection);
   const pending = useRef<{ conversationId: string; clientMessageId: string; content: string } | null>(null);
   const busy = useRef(false);
   const typing = useRef(false);
@@ -37,7 +36,7 @@ export default function MessageComposer({
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [content, setContent] = useState("");
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(connection.connected);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [otherTyping, setOtherTyping] = useState(false);
@@ -52,52 +51,48 @@ export default function MessageComposer({
 
   useEffect(() => {
     let active = true;
-    const connection = io(`${new URL(API_BASE, window.location.origin).origin}/chat`, {
-      transports: ["websocket"],
-      autoConnect: false,
-      auth: (callback) => {
-        void withAccessToken(async (accessToken) => {
-          if (active) callback({ accessToken });
-        }).catch(() => {
-          if (active) setError("Unable to authenticate chat. Reconnect or sign in again.");
-        });
-      },
-    });
     socket.current = connection;
-    connection.on("connect", () => {
+    const onConnect = () => {
       setConnected(true);
       setError("");
       ready();
-    });
-    connection.on("message:new", (message: ChatMessage) => {
+    };
+    const onMessage = (message: ChatMessage) => {
       if (active) received(message);
-    });
-    connection.on("message:read", (receipt: { conversationId: string; updated: number }) => {
+    };
+    const onReceipt = (receipt: { conversationId: string; updated: number }) => {
       if (active && receipt.conversationId === conversationId && receipt.updated > 0) readReceipt();
-    });
-    connection.on("typing:start", (event: { conversationId: string }) => {
+    };
+    const onTypingStart = (event: { conversationId: string }) => {
       if (!active || event.conversationId !== conversationId) return;
       setOtherTyping(true);
       if (remoteTimer.current) clearTimeout(remoteTimer.current);
       remoteTimer.current = setTimeout(() => setOtherTyping(false), 5000);
-    });
-    connection.on("typing:stop", (event: { conversationId: string }) => {
+    };
+    const onTypingStop = (event: { conversationId: string }) => {
       if (event.conversationId !== conversationId) return;
       if (remoteTimer.current) clearTimeout(remoteTimer.current);
       setOtherTyping(false);
-    });
-    connection.on("disconnect", () => {
+    };
+    const onDisconnect = () => {
       setConnected(false);
       setOtherTyping(false);
       typing.current = false;
       if (stopTimer.current) clearTimeout(stopTimer.current);
       if (remoteTimer.current) clearTimeout(remoteTimer.current);
+    };
+    connection.on("connect", onConnect);
+    connection.on("message:new", onMessage);
+    connection.on("message:read", onReceipt);
+    connection.on("typing:start", onTypingStart);
+    connection.on("typing:stop", onTypingStop);
+    connection.on("disconnect", onDisconnect);
+    // Catch a connection that completed between rendering and subscribing.
+    queueMicrotask(() => {
+      if (!active) return;
+      setConnected(connection.connected);
+      if (connection.connected) ready();
     });
-    connection.on("connect_error", () => {
-      setConnected(false);
-      setError("Unable to connect to chat. Check your connection and try again.");
-    });
-    connection.connect();
     return () => {
       active = false;
       if (typing.current && connection.connected)
@@ -105,10 +100,14 @@ export default function MessageComposer({
       if (stopTimer.current) clearTimeout(stopTimer.current);
       if (remoteTimer.current) clearTimeout(remoteTimer.current);
       socket.current = null;
-      connection.removeAllListeners();
-      connection.disconnect();
+      connection.off("connect", onConnect);
+      connection.off("message:new", onMessage);
+      connection.off("message:read", onReceipt);
+      connection.off("typing:start", onTypingStart);
+      connection.off("typing:stop", onTypingStop);
+      connection.off("disconnect", onDisconnect);
     };
-  }, [conversationId]);
+  }, [conversationId, connection]);
 
   useEffect(() => {
     if (!connected || !readKey) return;
@@ -162,18 +161,6 @@ export default function MessageComposer({
     stopTimer.current = setTimeout(stopTyping, 1200);
   }
 
-  async function reconnect() {
-    const connection = socket.current;
-    if (!connection) return;
-    setError("");
-    try {
-      await refreshSession();
-      if (socket.current === connection) connection.disconnect().connect();
-    } catch (error) {
-      if (socket.current === connection) setError(errorMessage(error));
-    }
-  }
-
   async function sendMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const connection = socket.current;
@@ -203,7 +190,7 @@ export default function MessageComposer({
         setError("Delivery could not be confirmed. Send again to retry safely.");
     } finally {
       busy.current = false;
-      if (socket.current === connection) setSending(false);
+      setSending(false);
     }
   }
 
@@ -215,7 +202,7 @@ export default function MessageComposer({
       </p>
       {otherTyping && <p className="muted" role="status">{recipientName || "The other participant"} is typing…</p>}
       {readError && <p className="notice" role="alert">{readError} <button type="button" className="text-link" onClick={() => setReadRetry(readRetry + 1)}>Retry read status</button></p>}
-      {error && <p className="notice" role="alert">{error}</p>}
+      {(error || connectionError) && <p className="notice" role="alert">{error || connectionError}</p>}
       <label htmlFor="chat-message">Message</label>
       <textarea
         id="chat-message"

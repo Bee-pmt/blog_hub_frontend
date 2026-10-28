@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import { errorMessage } from "@/lib/api-client";
+import { UnreadChatBadge } from "@/modules/chat/components/chat-provider";
 import NotificationBell from "@/modules/notifications/components/notification-bell";
 export default function DashboardShell({
   children,
@@ -108,6 +109,7 @@ export default function DashboardShell({
             .map((item) => (
               <Link
                 key={item.href}
+                className={item.href === "/dashboard/chat" ? "workspace-chat-link" : undefined}
                 href={item.href}
                 aria-current={
                   pathname === item.href ||
@@ -117,6 +119,7 @@ export default function DashboardShell({
                 }
               >
                 {item.label}
+                {item.href === "/dashboard/chat" && <UnreadChatBadge />}
               </Link>
             ))}
         </nav>

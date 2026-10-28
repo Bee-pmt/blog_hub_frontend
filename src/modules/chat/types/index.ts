@@ -3,7 +3,8 @@ export type ChatMessage = {
   conversationId: string;
   senderId: string;
   clientMessageId: string;
-  content: string;
+  content: string | null;
+  deletedAt: string | null;
   isRead: boolean;
   createdAt: string;
 };
@@ -31,4 +32,10 @@ export type MessagePage = {
   limit: number;
   total: number;
   totalPages: number;
+};
+
+export type MessageDeleted = {
+  messageId: string;
+  conversationId: string;
+  deletedAt: string;
 };

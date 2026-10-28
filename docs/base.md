@@ -17,7 +17,7 @@ Source: [`src/modules/base`](../src/modules/base). This module contains shared i
 
 `moduleRegistry.tsx` gathers navigation items from manifests and passes them to `DashboardShell`. The shell uses `useAuth()` to wait for session restoration, show restoration errors, redirect guests to `/login?returnTo=...`, and restrict admin workspace paths to administrators. NestJS remains the authority for protected data.
 
-The sidebar places the notification bell and settings link beside the account name. Sign-out calls the existing authentication action. The shell does not fetch or own story, taxonomy, or chat data.
+The sidebar places the notification bell and settings link beside the account name. The Messages link renders the chat module’s shared unread badge; see [Chat](chat.md#messages-sidebar-badge). Sign-out calls the existing authentication action. The shell does not fetch or own story, taxonomy, or chat data.
 
 The root page layout, global header/footer, and Redux provider live outside this module, in `src/app/layout.tsx` and `src/lib/ReduxProvider.tsx`.
 

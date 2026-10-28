@@ -5,12 +5,14 @@ import { queryError } from "@/lib/api/baseApi";
 import { useCreateConversationMutation, useGetConversationsQuery } from "../store/services/chatApi";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import type { Conversation } from "../types";
+import { useChatConnection } from "../components/chat-provider";
 import MessageHistory from "../components/message-history";
 
 export default function ConversationsPage() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { user } = useAuth();
+  const { deletions } = useChatConnection();
   const [started, setStarted] = useState<{ ownerId: string; conversation: Conversation } | null>(null);
   const [createConversation, { isLoading: creating, error: createError }] = useCreateConversationMutation();
   const {
@@ -61,18 +63,19 @@ export default function ConversationsPage() {
       )}
       <div className={`chat-layout${selected ? " chat-has-selection" : ""}`}>
         <section className="chat-conversations" aria-label="Conversation list">
-          {error ? (
+          {error && (
             <div className="notice" role="alert">
               {queryError(error)}{" "}
               <button className="text-link" onClick={() => void refetch()}>
                 Try again
               </button>
             </div>
-          ) : !data ? (
+          )}
+          {!data ? (!error && (
             <p className="loading-state" role="status">
               Loading conversations…
             </p>
-          ) : (
+          )) : (
             <>
               <p className="result-count" role="status">
                 {data.total}{" "}
@@ -125,8 +128,9 @@ export default function ConversationsPage() {
                             )}
                           </span>
                           <span className="conversation-preview">
-                            {conversation.lastMessage?.content ||
-                              "No messages yet."}
+                            {(conversation.lastMessage && deletions[conversation.lastMessage.id]) || conversation.lastMessage?.deletedAt
+                              ? "This message was deleted."
+                              : conversation.lastMessage?.content || "No messages yet."}
                           </span>
                         </span>
                         {conversation.unreadCount > 0 && (

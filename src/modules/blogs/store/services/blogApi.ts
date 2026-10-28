@@ -1,3 +1,4 @@
+import type { RootState } from "@/lib/store";
 import { baseApi } from "@/lib/api/baseApi";
 import { queryString } from "@/lib/utils";
 import type {
@@ -46,11 +47,12 @@ export const blogApi = baseApi.injectEndpoints({
       { input: BlogInput; id?: string; image: File | null }
     >({
       async queryFn({ input, id, image }, api) {
+        const session = (api.getState() as RootState).auth;
         try {
           return { data: await saveBlog(input, id, image, contentRequest) };
         } catch (failure) {
           const status = failure instanceof ApiError ? failure.status : 0;
-          if (status === 401) {
+          if (status === 401 && (api.getState() as RootState).auth === session) {
             clearSession();
             api.dispatch(sessionEnded());
           }

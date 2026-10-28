@@ -1,13 +1,15 @@
-import { act } from "react";
+import { Activity, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MessageComposer from "@/modules/chat/components/message-composer";
 import type { ChatMessage } from "@/modules/chat/types";
 
 const mocks = vi.hoisted(() => ({
-  io: vi.fn(), refresh: vi.fn(), token: vi.fn(),
+  io: vi.fn(), refresh: vi.fn(), token: vi.fn(), reconnect: vi.fn(),
 }));
-vi.mock("socket.io-client", () => ({ io: mocks.io }));
+vi.mock("@/modules/chat/components/chat-provider", () => ({
+  useChatConnection: () => ({ socket: connection, connectionError: "", reconnect: mocks.reconnect }),
+}));
 vi.mock("@/lib/session", () => ({
   refreshSession: mocks.refresh,
   withAccessToken: mocks.token,
@@ -19,9 +21,9 @@ let listeners: Record<string, (...args: unknown[]) => void>;
 let connection: {
   connected: boolean;
   on: ReturnType<typeof vi.fn>;
-  connect: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
-  removeAllListeners: ReturnType<typeof vi.fn>;
+  connect: ReturnType<typeof vi.fn<() => unknown>>;
+  disconnect: ReturnType<typeof vi.fn<() => unknown>>;
+  off: ReturnType<typeof vi.fn>;
   timeout: ReturnType<typeof vi.fn>;
   emitWithAck: ReturnType<typeof vi.fn>;
   emit: ReturnType<typeof vi.fn>;
@@ -38,12 +40,12 @@ beforeEach(async () => {
     on: vi.fn((event, callback) => { listeners[event] = callback; }),
     connect: vi.fn(() => connection),
     disconnect: vi.fn(() => connection),
-    removeAllListeners: vi.fn(),
+    off: vi.fn((event, callback) => { if (listeners[event] === callback) delete listeners[event]; }),
     timeout: vi.fn(() => connection),
     emitWithAck: vi.fn(),
     emit: vi.fn(),
   };
-  mocks.io.mockReturnValue(connection);
+  mocks.reconnect.mockImplementation(async () => { await mocks.refresh(); connection.disconnect(); connection.connect(); });
   mocks.refresh.mockResolvedValue("fresh-token");
   mocks.token.mockImplementation(async (send) => send("app-token"));
   onSent = vi.fn();
@@ -79,14 +81,9 @@ async function submit() {
     container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
-const message = { id: "saved", conversationId: "conversation-a", content: "Hello", senderId: "author", createdAt: "2026-10-21T00:00:00Z", clientMessageId: "client", isRead: false };
+const message = { id: "saved", conversationId: "conversation-a", content: "Hello", deletedAt: null, senderId: "author", createdAt: "2026-10-21T00:00:00Z", clientMessageId: "client", isRead: false };
 
-it("authenticates with the existing app token and displays only confirmed sends", async () => {
-  const options = mocks.io.mock.calls.at(-1)![1];
-  expect(options.transports).toEqual(["websocket"]);
-  const callback = vi.fn();
-  await act(async () => options.auth(callback));
-  expect(callback).toHaveBeenCalledWith({ accessToken: "app-token" });
+it("uses the shared socket and displays only confirmed sends", async () => {
   await connect();
   await type("Hello");
   let resolve!: (value: unknown) => void;
@@ -140,20 +137,18 @@ it("refreshes authentication on manual reconnect and never sends while disconnec
   await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
   expect(mocks.refresh).toHaveBeenCalled();
   expect(connection.disconnect).toHaveBeenCalled();
-  expect(connection.connect).toHaveBeenCalledTimes(2);
-  await act(async () => listeners.connect_error());
-  expect(container.textContent).toContain("Unable to connect to chat");
+  expect(connection.connect).toHaveBeenCalledTimes(1);
 });
 
-it("disconnects on unmount and ignores late send acknowledgements", async () => {
+it("removes its listeners without disconnecting the shared socket and ignores late acknowledgements", async () => {
   await connect();
   await type("Hello");
   let resolve!: (value: unknown) => void;
   connection.emitWithAck.mockReturnValue(new Promise((done) => { resolve = done; }));
   await submit();
   await act(async () => root.render(null));
-  expect(connection.disconnect).toHaveBeenCalled();
-  expect(connection.removeAllListeners).toHaveBeenCalled();
+  expect(connection.disconnect).not.toHaveBeenCalled();
+  expect(connection.off).toHaveBeenCalledWith("message:new", expect.any(Function));
   await act(async () => resolve({ ok: true, data: { message, created: true } }));
   expect(onSent).not.toHaveBeenCalled();
 });
@@ -169,7 +164,7 @@ it("receives live events with the latest callback without opening another socket
   await act(async () => listeners["message:new"](message));
   expect(nextCallback).toHaveBeenCalledWith(message);
   expect(onReceived).toHaveBeenCalledTimes(1);
-  expect(connection.connect).toHaveBeenCalledTimes(1);
+  expect(connection.connect).not.toHaveBeenCalled();
   await connect();
   expect(onConnected).toHaveBeenCalledTimes(2);
   expect(connection.on.mock.calls.filter(([event]) => event === "message:new")).toHaveLength(1);
@@ -224,4 +219,35 @@ it("marks only the supplied viewed messages after focus and confirms only a succ
   await act(async () => container.querySelector<HTMLButtonElement>("button[type=button]")!.click());
   await act(async () => vi.advanceTimersByTime(300));
   expect(onRead).toHaveBeenCalledWith(["viewed-1", "new-unread-2"]);
+});
+
+it("detects a shared connection completed before its listeners were registered", async () => {
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  connection.connected = false;
+  connection.on.mockImplementation((event, callback) => {
+    listeners[event] = callback;
+    if (event === "connect") connection.connected = true;
+  });
+  await act(async () => root.render(<MessageComposer conversationId="conversation-a" onSent={onSent} onReceived={onReceived} onConnected={onConnected} />));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Chat connected");
+});
+
+
+it("unlocks sending when a confirmation arrives while the route is hidden", async () => {
+  const render = (mode: "visible" | "hidden") => root.render(
+    <Activity mode={mode}><MessageComposer conversationId="conversation-a" onSent={onSent} onReceived={onReceived} onConnected={onConnected} /></Activity>,
+  );
+  await act(async () => render("visible"));
+  await connect();
+  await type("Hello");
+  let finish!: (value: unknown) => void;
+  connection.emitWithAck.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  await submit();
+  await act(async () => render("hidden"));
+  await act(async () => finish({ ok: true, data: { message, created: true } }));
+  await act(async () => render("visible"));
+  expect(container.querySelector("textarea")!.disabled).toBe(false);
+  expect(container.textContent).not.toContain("Sending…");
+  expect(onSent).not.toHaveBeenCalled();
 });
