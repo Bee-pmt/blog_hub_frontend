@@ -2,7 +2,7 @@
 import type { Category, Tag } from "@/modules/taxonomy/types";
 import type { Filters } from "@/modules/blogs/types";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { queryString } from "@/lib/utils";
@@ -26,17 +26,23 @@ export default function SearchFilters({
   const searchInput = useRef<HTMLInputElement>(null);
   const categoryId = categories.find((item) => item.slug === category)?.id;
 
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const query = queryString({
+      q: String(form.get("q") || ""),
+      author: String(form.get("author") || ""),
+      category,
+      tag,
+    });
+    router.push(`/${query}#journal`);
+  }
+
   return (
     <form
       ref={searchForm}
       className="search-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        router.push(
-          `/${queryString({ q: String(form.get("q") || ""), author: String(form.get("author") || ""), category, tag })}#journal`,
-        );
-      }}
+      onSubmit={handleSearch}
     >
       <div className="search-primary">
         <label className="story-search">

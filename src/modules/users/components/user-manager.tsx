@@ -47,8 +47,9 @@ export default function UserManager() {
       toast.success("Account updated.");
       if (pending.account.id === user?.id) await restore();
     } catch (failure) {
-      setError(errorMessage(failure));
-      toast.error(errorMessage(failure));
+      const message = errorMessage(failure);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
       setPending(null);
@@ -70,9 +71,10 @@ export default function UserManager() {
       <form
         className="search-form user-search"
         onSubmit={searchForm.handleSubmit(({ q }) => {
-          setQuery(q.trim());
+          const search = q.trim();
+          setQuery(search);
           setPage(1);
-          if (q.trim() === query && page === 1) void refetch();
+          if (search === query && page === 1) void refetch();
         })}
       >
         <label>

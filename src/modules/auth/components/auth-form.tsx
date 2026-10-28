@@ -13,6 +13,11 @@ import { useAuth } from "@/modules/auth/hooks/useAuth";
 import GoogleButton from "./google-button";
 
 type AuthFormProps = { mode: "login" | "register" };
+type AuthFormValues = {
+  displayName: string;
+  email: string;
+  password: string;
+};
 
 export default function AuthForm({ mode }: AuthFormProps) {
   const {
@@ -22,11 +27,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
     error: sessionError,
     restore: restoreSession,
   } = useAuth();
-  const { register, handleSubmit } = useForm<{
-    displayName: string;
-    email: string;
-    password: string;
-  }>();
+  const { register, handleSubmit } = useForm<AuthFormValues>();
 
   const router = useRouter();
   const [error, setError] = useState("");
@@ -34,11 +35,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [isRegistered, setIsRegistered] = useState(false);
   const isRegister = mode === "register";
 
-  async function submit(values: {
-    displayName: string;
-    email: string;
-    password: string;
-  }) {
+  async function submit(values: AuthFormValues) {
     if (isSubmitting) return;
 
     const formData = new FormData();

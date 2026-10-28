@@ -19,6 +19,7 @@ import { useForm } from "react-hook-form";
 import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 export default function TaxonomyManager() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const {
     data,
     isLoading: loading,
@@ -42,11 +43,11 @@ export default function TaxonomyManager() {
   const editDialog = useRef<HTMLDialogElement>(null);
   const [deleting, setDeleting] = useState<TaxonomySelection | null>(null);
   const visibleTags = tags.filter(
-    (item) => user?.role === "admin" || item.createdById === user?.id,
+    (item) => isAdmin || item.createdById === user?.id,
   );
   const visibleCategories = categories.filter(
     (item) =>
-      user?.role === "admin" ||
+      isAdmin ||
       item.createdById === user?.id ||
       visibleTags.some((tag) => tag.categoryId === item.id),
   );
@@ -66,10 +67,10 @@ export default function TaxonomyManager() {
     if (busy) return;
     const name = values.name.trim();
     if (!name || !/[\p{L}\p{N}]/u.test(name)) {
-      if (id)
-        setEditError("Use a name containing at least one letter or number.");
-      else setError("Use a name containing at least one letter or number.");
-      toast.error("Use a name containing at least one letter or number.");
+      const message = "Use a name containing at least one letter or number.";
+      if (id) setEditError(message);
+      else setError(message);
+      toast.error(message);
       return;
     }
     setBusy(true);
@@ -93,15 +94,16 @@ export default function TaxonomyManager() {
           : "Created successfully.",
       );
     } catch (failure) {
-      if (id) setEditError(errorMessage(failure));
-      else setError(errorMessage(failure));
-      toast.error(errorMessage(failure));
+      const message = errorMessage(failure);
+      if (id) setEditError(message);
+      else setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
   }
   function entry(item: Category, kind: TaxonomyKind) {
-    const editable = user?.role === "admin" || item.createdById === user?.id;
+    const editable = isAdmin || item.createdById === user?.id;
     const categoryTags =
       kind === "categories"
         ? visibleTags.filter((tag) => tag.categoryId === item.id)
@@ -170,7 +172,7 @@ export default function TaxonomyManager() {
             </svg>
           </button>
         )}
-        {user?.role === "admin" && (
+        {isAdmin && (
           <button
             className="button button-secondary taxonomy-icon-button"
             type="button"
@@ -202,7 +204,7 @@ export default function TaxonomyManager() {
               <ul>{categoryTags.map((tag) => entry(tag, "tags"))}</ul>
             ) : (
               <p className="muted">
-                {user?.role === "admin"
+                {isAdmin
                   ? "No tags in this category yet."
                   : "You haven’t created any tags in this category yet."}
               </p>
@@ -222,7 +224,7 @@ export default function TaxonomyManager() {
       </div>
       <p className="muted">
         Create topics for your stories.{" "}
-        {user?.role === "admin"
+        {isAdmin
           ? "Click a category to view its tags. You can manage all entries."
           : "Click a category to view your tags. Categories you created or added tags to appear below. You can rename your own entries and create tags under any category."}
       </p>
@@ -306,21 +308,19 @@ export default function TaxonomyManager() {
           Loading categories and tags…
         </p>
       ) : (
-        <>
-          <section className="taxonomy-section">
-            <h2>
-              Categories{" "}
-              <span className="muted">({visibleCategories.length})</span>
-            </h2>
-            {visibleCategories.length ? (
-              <ul>
-                {visibleCategories.map((item) => entry(item, "categories"))}
-              </ul>
-            ) : (
-              <p className="muted">Create your first category above.</p>
-            )}
-          </section>
-        </>
+        <section className="taxonomy-section">
+          <h2>
+            Categories{" "}
+            <span className="muted">({visibleCategories.length})</span>
+          </h2>
+          {visibleCategories.length ? (
+            <ul>
+              {visibleCategories.map((item) => entry(item, "categories"))}
+            </ul>
+          ) : (
+            <p className="muted">Create your first category above.</p>
+          )}
+        </section>
       )}
       {editing && (
         <dialog
@@ -397,8 +397,9 @@ export default function TaxonomyManager() {
               }).unwrap();
               toast.success("Deleted successfully.");
             } catch (failure) {
-              setError(errorMessage(failure));
-              toast.error(errorMessage(failure));
+              const message = errorMessage(failure);
+              setError(message);
+              toast.error(message);
             } finally {
               setBusy(false);
               setDeleting(null);

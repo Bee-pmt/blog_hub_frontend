@@ -55,8 +55,9 @@ export default function PostManager({ admin = false }: PostManagerProps) {
             : "Story unpublished.",
       );
     } catch (failure) {
-      setError(errorMessage(failure));
-      toast.error(errorMessage(failure));
+      const message = errorMessage(failure);
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy("");
       setDeleting(null);

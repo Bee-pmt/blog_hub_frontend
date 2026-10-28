@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -30,6 +30,51 @@ export default function GoogleForm({
   const linking = mode === "link";
   const registering = !linking && step === "register";
   const needsPassword = linking || step !== "login";
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setError("");
+    try {
+      if (registering) {
+        const password = String(form.get("password") || "");
+        if (
+          [...password].length < 8 ||
+          new TextEncoder().encode(password).length > 72
+        )
+          throw new Error(
+            "Use at least 8 characters and no more than 72 UTF-8 bytes.",
+          );
+        if (password !== form.get("confirmPassword"))
+          throw new Error("Passwords do not match.");
+      }
+      if (linking) {
+        const result = await withAccessToken(
+          (token) => completeGoogleAction(form, token),
+          false,
+        );
+        if (result.error) throw new Error(result.error);
+        toast.success("Google account linked.");
+        router.replace("/settings");
+      } else {
+        await completeGoogle(form);
+        toast.success(
+          registering
+            ? "Your account is ready."
+            : "Signed in with Google.",
+        );
+        router.replace(returnTo);
+      }
+      router.refresh();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main id="main-content" className="site-container account-page">
       <div className="account-intro">
@@ -59,52 +104,7 @@ export default function GoogleForm({
               : "Your BlogHub session expired. Sign in, then link Google from settings again."}
           </p>
         ) : (
-          <form
-            className="stack"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (busy) return;
-              const form = new FormData(event.currentTarget);
-              setBusy(true);
-              setError("");
-              try {
-                if (registering) {
-                  const password = String(form.get("password") || "");
-                  if (
-                    [...password].length < 8 ||
-                    new TextEncoder().encode(password).length > 72
-                  )
-                    throw new Error(
-                      "Use at least 8 characters and no more than 72 UTF-8 bytes.",
-                    );
-                  if (password !== form.get("confirmPassword"))
-                    throw new Error("Passwords do not match.");
-                }
-                if (linking) {
-                  const result = await withAccessToken(
-                    (token) => completeGoogleAction(form, token),
-                    false,
-                  );
-                  if (result.error) throw new Error(result.error);
-                  toast.success("Google account linked.");
-                  router.replace("/settings");
-                } else {
-                  await completeGoogle(form);
-                  toast.success(
-                    registering
-                      ? "Your account is ready."
-                      : "Signed in with Google.",
-                  );
-                  router.replace(returnTo);
-                }
-                router.refresh();
-              } catch (failure) {
-                setError(errorMessage(failure));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
+          <form className="stack" onSubmit={handleSubmit}>
             <fieldset disabled={busy} className="stack password-fields">
               {needsPassword && (
                 <TextField
