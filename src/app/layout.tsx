@@ -74,8 +74,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   BlogHub<span aria-hidden="true">.</span>
                 </Link>
                 <nav className="site-nav" aria-label="Main navigation">
-                  <Link href="/#journal">Journal</Link>
-                  <Link href="/#about">About</Link>
                   <AccountNav />
                   <ThemeSelect />
                 </nav>

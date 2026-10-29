@@ -18,7 +18,7 @@ export const userApi = baseApi.injectEndpoints({
       }
     >({
       query: ({ id, change }) => ({
-        route: `/admin/users/${encodeURIComponent(id)}/${"role" in change ? "role" : "status"}`,
+        route: `/admin/users/${encodeURIComponent(id)}${"role" in change ? "" : "/status"}`,
         method: "PATCH",
         body: JSON.stringify(change),
         direct: true,

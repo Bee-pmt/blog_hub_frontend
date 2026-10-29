@@ -332,10 +332,22 @@ describe("RTK Query content", () => {
       )
       .unwrap();
     expect(authenticatedRequest).toHaveBeenCalledWith(
-      "/admin/users/member/role",
+      "/admin/users/member",
       "PATCH",
-      expect.anything(),
+      { body: JSON.stringify({ role: "admin" }) },
     );
     expect(contentRequest).not.toHaveBeenCalled();
+  });
+  it("keeps account status changes on the status endpoint", async () => {
+    const app = store();
+    await app.dispatch(userApi.endpoints.updateUser.initiate({
+      id: "member",
+      change: { status: "disabled" },
+    })).unwrap();
+    expect(authenticatedRequest).toHaveBeenCalledWith(
+      "/admin/users/member/status",
+      "PATCH",
+      { body: JSON.stringify({ status: "disabled" }) },
+    );
   });
 });

@@ -429,7 +429,7 @@ createServer(async (req, res) => {
     const filtered = users.filter((account) => `${account.displayName} ${account.email}`.toLowerCase().includes(q));
     return send({ items: filtered.slice((page - 1) * limit, page * limit), page, limit, total: filtered.length, totalPages: Math.ceil(filtered.length / limit) });
   }
-  const userUpdate = /^\/admin\/users\/([^/]+)\/(role|status)$/.exec(path);
+  const userUpdate = /^\/admin\/users\/([^/]+)(?:\/status)?$/.exec(path);
   if (userUpdate && req.method === "PATCH") {
     const target = users.find((account) => account.id === userUpdate[1]);
     if (!target) return send({ message: "User not found" }, 404);
