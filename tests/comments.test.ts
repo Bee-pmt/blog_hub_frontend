@@ -4,6 +4,7 @@ import { baseApi } from "@/lib/api/baseApi";
 import { commentApi } from "@/modules/blogs/store/services/commentApi";
 import { API_BASE, ApiError } from "@/lib/api-client";
 import { authenticatedRequest, clearSession } from "@/lib/session";
+import { restoreAuth } from "@/modules/auth/store/slices/authSlice";
 
 vi.mock("@/lib/session", () => ({
   authenticatedRequest: vi.fn(), clearSession: vi.fn(),
@@ -70,5 +71,53 @@ describe("comments API", () => {
     fetchMock.mockImplementation(async () => Response.json({ message: "Unavailable" }, { status: 401 }));
     await expect(store.dispatch(commentApi.endpoints.getComments.initiate({ blogId: "uuid", page: 1 })).unwrap()).rejects.toEqual({ status: 401, message: "Unavailable" });
     expect(clearSession).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("reaction API", () => {
+  const summary = { likeCount: 3, dislikeCount: 1, myReaction: "like" as const };
+  it("uses public GET for visitors and authenticated GET for account-specific summaries", async () => {
+    fetchMock.mockImplementation(async () => Response.json({ ...summary, myReaction: null }));
+    await store.dispatch(commentApi.endpoints.getReactions.initiate({ kind: "blogs", id: "blog-uuid" })).unwrap();
+    expect(fetchMock.mock.calls[0][0]).toBe(`${API_BASE}/blogs/blog-uuid/reactions`);
+    expect(fetchMock.mock.calls[0][1].headers.has("Authorization")).toBe(false);
+    vi.mocked(authenticatedRequest).mockResolvedValue(summary);
+    await store.dispatch(commentApi.endpoints.getReactions.initiate({ kind: "comments", id: "reply-uuid", accountId: "member" })).unwrap();
+    expect(authenticatedRequest).toHaveBeenCalledWith("/comments/reply-uuid/reactions", "GET", { body: undefined });
+  });
+
+  it("replaces cached counts and selected state from the successful POST response", async () => {
+    const target = { kind: "blogs" as const, id: "blog-uuid", accountId: "member" };
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ likeCount: 2, dislikeCount: 1, myReaction: null });
+    await store.dispatch(commentApi.endpoints.getReactions.initiate(target)).unwrap();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce(summary);
+    await store.dispatch(commentApi.endpoints.react.initiate({ ...target, type: "like" })).unwrap();
+    expect(authenticatedRequest).toHaveBeenLastCalledWith("/blogs/blog-uuid/reactions", "POST", { body: '{"type":"like"}' }, false);
+    expect(commentApi.endpoints.getReactions.select(target)(store.getState()).data).toEqual(summary);
+  });
+
+  it("never retries a 401 reaction POST and uses the existing session handling", async () => {
+    vi.mocked(authenticatedRequest).mockRejectedValue(new ApiError("Expired token", 401));
+    await expect(store.dispatch(commentApi.endpoints.react.initiate({ kind: "comments", id: "reply-uuid", accountId: "member", type: "dislike" })).unwrap()).rejects.toEqual({ status: 401, message: "Expired token" });
+    expect(authenticatedRequest).toHaveBeenCalledTimes(1);
+    expect(authenticatedRequest).toHaveBeenCalledWith("/comments/reply-uuid/reactions", "POST", { body: '{"type":"dislike"}' }, false);
+    expect(clearSession).toHaveBeenCalledOnce();
+  });
+
+  it("clears account-specific summaries and ignores late reaction results after switching users", async () => {
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "first", role: "author" });
+    await store.dispatch(restoreAuth()).unwrap();
+    const first = { kind: "blogs" as const, id: "blog-uuid", accountId: "first" };
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce(summary);
+    await store.dispatch(commentApi.endpoints.getReactions.initiate(first)).unwrap();
+    let finish!: (value: unknown) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = store.dispatch(commentApi.endpoints.react.initiate({ ...first, type: "dislike" }));
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "second", role: "author" });
+    await store.dispatch(restoreAuth()).unwrap();
+    finish({ likeCount: 2, dislikeCount: 2, myReaction: "dislike" });
+    await pending;
+    expect(commentApi.endpoints.getReactions.select(first)(store.getState()).data).toBeUndefined();
   });
 });

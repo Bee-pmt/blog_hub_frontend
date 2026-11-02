@@ -24,6 +24,9 @@ export type BlogComment = {
   id: string;
   blogId: string;
   parentId: string | null;
+  replyCount: number;
+  likeCount: number;
+  dislikeCount: number;
   author: { id: string; displayName: string };
   content: string;
   createdAt: string;
@@ -36,6 +39,13 @@ export type CommentPage = {
   limit: number;
   total: number;
   totalPages: number;
+};
+
+export type ReactionType = "like" | "dislike";
+export type ReactionSummary = {
+  likeCount: number;
+  dislikeCount: number;
+  myReaction: ReactionType | null;
 };
 
 export type BlogPage = {

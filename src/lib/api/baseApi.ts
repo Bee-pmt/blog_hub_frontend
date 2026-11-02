@@ -13,6 +13,7 @@ export type RequestArgs = {
   body?: string | FormData;
   direct?: boolean;
   public?: boolean;
+  retryUnauthorized?: boolean;
 };
 export type RequestError = { status: number; message: string };
 const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
@@ -32,9 +33,10 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
       args.direct || !args.method || args.method === "GET"
         ? authenticatedRequest
         : contentRequest;
-    const data = await send(args.route, args.method || "GET", {
-      body: args.body,
-    });
+    const options = { body: args.body };
+    const data = args.retryUnauthorized === false
+      ? await authenticatedRequest(args.route, args.method || "GET", options, false)
+      : await send(args.route, args.method || "GET", options);
     return { data: data ?? null };
   } catch (failure) {
     const status = failure instanceof ApiError ? failure.status : 0;

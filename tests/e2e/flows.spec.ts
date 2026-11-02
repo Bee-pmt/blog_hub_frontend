@@ -1663,11 +1663,12 @@ test("comments allow public reading, lazy replies and separate pagination withou
   await expect(section.locator("img")).toHaveCount(0);
   expect((await (await request.get(`${api}/__requests`)).json()).some((item: { path: string }) => item.path.includes("/replies"))).toBe(false);
   const first = section.locator(":scope > .comment-list > li").first();
-  await first.getByRole("button", { name: "View replies / Reply" }).click();
+  await expect(first.getByRole("button", { name: /^Replies \(/ })).toHaveText("Replies (11)");
+  await first.getByRole("button", { name: /^Replies \(/ }).click();
   await expect(first.locator(".comment-replies .comment-row")).toHaveCount(10);
   await first.getByRole("navigation", { name: "Reply pages" }).getByRole("button", { name: "Next" }).click();
   await expect(first.locator(".comment-replies .comment-content")).toHaveText("Reply 10");
-  await expect(first.locator(".comment-replies").getByRole("button", { name: "View replies / Reply" })).toHaveCount(0);
+  await expect(first.locator(".comment-replies").getByRole("button", { name: /^Replies \(/ })).toHaveCount(0);
   await expect(section.getByRole("navigation", { name: "Comment pages" })).toContainText("Page 1 of 2");
   await section.getByRole("navigation", { name: "Comment pages" }).getByRole("button", { name: "Next" }).click();
   await expect(section.locator(":scope > .comment-list > li .comment-content")).toHaveText("Comment 10");
@@ -1710,11 +1711,12 @@ test("comments create, edit, reply and cascade delete with validation and safe p
   await own.getByRole("button", { name: "Save changes" }).click();
   await expect(own.locator(".comment-content")).toHaveText("Updated comment");
   await expect(own.getByText("Edited", { exact: true })).toBeVisible();
-  await own.getByRole("button", { name: "View replies / Reply" }).click();
+  await own.getByRole("button", { name: /^Replies \(/ }).click();
   await expect(own.getByText("No replies yet.")).toBeVisible();
   await own.getByRole("textbox", { name: "Your reply", exact: true }).fill("First reply");
   await own.getByRole("button", { name: "Post reply" }).click();
   await expect(own.locator(".comment-replies .comment-content")).toHaveText("First reply");
+  await expect(own.locator(":scope > .actions").getByRole("button", { name: /^Replies \(/ })).toContainText("Replies (1)");
   const reply = own.locator(".comment-replies .comment-row");
   await reply.getByRole("button", { name: "Edit", exact: true }).click();
   await reply.getByRole("textbox", { name: "Edit your comment", exact: true }).fill("Edited reply");
@@ -1738,7 +1740,7 @@ test("comments let admins delete others but not edit them and recover from permi
   const section = page.getByRole("region", { name: "Comments", exact: true });
   await expect(section.getByText("Other person's comment", { exact: true })).toBeVisible();
   await expect(section.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
-  await section.getByRole("button", { name: "View replies / Reply" }).click();
+  await section.getByRole("button", { name: /^Replies \(/ }).click();
   const reply = section.locator(".comment-replies .comment-row");
   await expect(reply.getByText("Other person's reply", { exact: true })).toBeVisible();
   await request.post(`${api}/__fail-request`, { data: { path: "/comments/child", method: "DELETE", status: 403, message: "Permission denied" } });
@@ -1766,7 +1768,8 @@ test("comments recover pagination after deleting the last item on a comment or r
   await page.goto("/blogs/thoughtful-story-1");
   const section = page.getByRole("region", { name: "Comments", exact: true });
   const first = section.locator(":scope > .comment-list > li").first();
-  await first.getByRole("button", { name: "View replies / Reply" }).click();
+  await expect(first.getByRole("button", { name: /^Replies \(/ })).toHaveText("Replies (11)");
+  await first.getByRole("button", { name: /^Replies \(/ }).click();
   await first.getByRole("navigation", { name: "Reply pages" }).getByRole("button", { name: "Next" }).click();
   await expect(first.locator(".comment-replies .comment-content")).toHaveText("Child 10");
   await first.locator(".comment-replies").getByRole("button", { name: "Delete", exact: true }).click();
@@ -1781,4 +1784,109 @@ test("comments recover pagination after deleting the last item on a comment or r
   await expect(section.getByRole("heading", { name: "Comments (10)", exact: true })).toBeVisible();
   await expect(section.locator(":scope > .comment-list > li")).toHaveCount(10);
   await expect(section.getByRole("navigation", { name: "Comment pages" })).toHaveCount(0);
+});
+
+test("reactions toggle and replace votes on blogs, comments and expanded replies", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [
+    commentFixture("parent", "A comment"), commentFixture("reply", "A reply", "parent"),
+  ] } });
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const blog = page.getByRole("group", { name: "Story reactions", exact: true });
+  await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await blog.getByRole("button", { name: "Dislike (0)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Like (0)", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(blog.getByRole("button", { name: "Dislike (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await blog.getByRole("button", { name: "Dislike (1)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Dislike (0)", exact: true })).toHaveAttribute("aria-pressed", "false");
+  const parent = page.locator(".comment-section > .comment-list > li").first();
+  const comment = parent.getByRole("group", { name: "Comment reactions", exact: true });
+  await comment.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(comment.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(parent.getByRole("button", { name: "Replies (1)", exact: true })).toBeVisible();
+  await parent.getByRole("button", { name: "Replies (1)", exact: true }).click();
+  const reply = parent.locator(".comment-replies").getByRole("group", { name: "Comment reactions", exact: true });
+  await reply.getByRole("button", { name: "Dislike (0)", exact: true }).click();
+  await expect(reply.getByRole("button", { name: "Dislike (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const calls = await (await request.get(`${api}/__requests`)).json();
+  expect(calls.some((item: { path: string; method: string }) => item.path === "/api/v1/comments/reply/reactions" && item.method === "POST")).toBe(true);
+});
+
+test("reactions prompt visitors and keep selections separate when accounts change", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [commentFixture("parent", "A comment")] } });
+  await page.goto("/blogs/thoughtful-story-1");
+  const blog = page.getByRole("group", { name: "Story reactions", exact: true });
+  await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Sign in to react", exact: true })).toHaveAttribute("href", "/login?returnTo=%2Fblogs%2Fthoughtful-story-1");
+  const calls = await (await request.get(`${api}/__requests`)).json();
+  expect(calls.some((item: { path: string; method: string }) => item.path.endsWith("/reactions") && item.method === "POST")).toBe(false);
+  expect(calls.some((item: { path: string }) => item.path === "/api/v1/comments/parent/reactions")).toBe(false);
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Profile", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await login(page, "other@test.local");
+  await page.goto("/blogs/thoughtful-story-1");
+  await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await blog.getByRole("button", { name: "Dislike (0)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Dislike (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("reactions reconcile an uncertain POST before allowing another toggle", async ({ page, request }) => {
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const blog = page.getByRole("group", { name: "Story reactions", exact: true });
+  await expect(blog.getByRole("button", { name: "Like (0)", exact: true })).toBeEnabled();
+  let dropped = false;
+  let failRead = false;
+  await page.route(`${api}/blogs/story-1/reactions`, async route => {
+    if (route.request().method() === "POST" && !dropped) {
+      dropped = true;
+      await route.fetch();
+      failRead = true;
+      await route.abort("timedout");
+    } else if (route.request().method() === "GET" && failRead) {
+      await route.fulfill({ status: 503, json: { message: "Unable to refresh reactions" } });
+    } else await route.continue();
+  });
+  await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(page.getByText("Unable to refresh reactions", { exact: true })).toBeVisible();
+  await expect(blog.getByRole("button", { name: /^Like/ })).toBeDisabled();
+  await expect(blog.getByRole("button", { name: /^Dislike/ })).toBeDisabled();
+  let calls = await (await request.get(`${api}/__requests`)).json();
+  expect(calls.filter((item: { path: string; method: string }) => item.path === "/api/v1/blogs/story-1/reactions" && item.method === "POST")).toHaveLength(1);
+  failRead = false;
+  await page.getByRole("button", { name: "Refresh reactions", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toBeEnabled();
+  await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await blog.getByRole("button", { name: "Like (1)", exact: true }).click();
+  await expect(blog.getByRole("button", { name: "Like (0)", exact: true })).toHaveAttribute("aria-pressed", "false");
+  calls = await (await request.get(`${api}/__requests`)).json();
+  expect(calls.filter((item: { path: string; method: string }) => item.path === "/api/v1/blogs/story-1/reactions" && item.method === "POST")).toHaveLength(2);
+});
+
+test("reactions handle unauthorized POSTs once and missing summaries safely", async ({ page }) => {
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const blog = page.getByRole("group", { name: "Story reactions", exact: true });
+  await expect(blog.getByRole("button", { name: "Like (0)", exact: true })).toBeEnabled();
+  let posts = 0;
+  await page.route(`${api}/blogs/story-1/reactions`, async route => {
+    if (route.request().method() === "POST") {
+      posts++;
+      await route.fulfill({ status: 401, json: { message: "Expired access token" } });
+    } else await route.continue();
+  });
+  await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+  expect(posts).toBe(1);
+  await page.unroute(`${api}/blogs/story-1/reactions`);
+  await page.route(`${api}/blogs/story-1/reactions`, route => route.fulfill({ status: 404, json: { message: "Story is unavailable" } }));
+  await page.reload();
+  await expect(page.getByText("Story is unavailable", { exact: true })).toBeVisible();
+  await expect(blog.getByRole("button", { name: /^Like/ })).toBeDisabled();
 });

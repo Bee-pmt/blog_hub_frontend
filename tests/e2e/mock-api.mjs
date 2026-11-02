@@ -5,11 +5,13 @@ let requestLog = [], failRequest = null;
 let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes, googleAccounts, auditLogs;
 let notifications;
 let comments;
+let reactions;
 let chatConversations;
 let chatMessages;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
   comments = [];
+  reactions = new Map();
   chatConversations = [];
   chatMessages = [];
   notifications = [];
@@ -142,6 +144,18 @@ function serialize(blog, detail) {
     delete result.content;
   }
   return result;
+}
+function reactionSummary(kind, id, userId) {
+  const votes = reactions.get(`${kind}:${id}`) || new Map();
+  return {
+    likeCount: [...votes.values()].filter(type => type === "like").length,
+    dislikeCount: [...votes.values()].filter(type => type === "dislike").length,
+    myReaction: votes.get(userId) || null,
+  };
+}
+function serializeComment(comment) {
+  const { likeCount, dislikeCount } = reactionSummary("comments", comment.id);
+  return { ...comment, replyCount: comments.filter(item => item.parentId === comment.id).length, likeCount, dislikeCount };
 }
 createServer(async (req, res) => {
   const origin = req.headers.origin;
@@ -333,6 +347,23 @@ createServer(async (req, res) => {
     for (const [key, value] of access) if (value.id === user.id) access.delete(key);
     return send({ message: "Password changed successfully. Please log in again." });
   }
+  const reactionRoute = /^\/(blogs|comments)\/([^/]+)\/reactions$/.exec(path);
+  if (reactionRoute) {
+    const [, kind, id] = reactionRoute;
+    if ((req.headers.authorization || req.method === "POST") && !user) return send({ message: "Sign in required" }, 401);
+    const comment = kind === "comments" ? comments.find(item => item.id === id) : null;
+    const blog = blogs.find(item => item.id === (kind === "blogs" ? id : comment?.blogId) && item.status === "published");
+    if (!blog) return send({ message: "Story or comment is unavailable" }, 404);
+    if (req.method === "POST") {
+      if (!["like", "dislike"].includes(data.type)) return send({ message: "Invalid reaction" }, 400);
+      const key = `${kind}:${id}`;
+      const votes = reactions.get(key) || new Map();
+      if (votes.get(user.id) === data.type) votes.delete(user.id);
+      else votes.set(user.id, data.type);
+      reactions.set(key, votes);
+    }
+    return send(reactionSummary(kind, id, user?.id));
+  }
   const protectedPath =
     path.startsWith("/chat/") ||
     path.startsWith("/me/") ||
@@ -354,7 +385,7 @@ createServer(async (req, res) => {
       const items = comments.filter(item => item.blogId === blog.id && item.parentId === (parent?.id || null));
       const page = Number(url.searchParams.get("page") || 1);
       const limit = Number(url.searchParams.get("limit") || 10);
-      return send({ items: items.slice((page - 1) * limit, page * limit), page, limit, total: items.length, totalPages: Math.ceil(items.length / limit) });
+      return send({ items: items.slice((page - 1) * limit, page * limit).map(serializeComment), page, limit, total: items.length, totalPages: Math.ceil(items.length / limit) });
     }
     if (req.method === "DELETE") {
       if (user.id !== current.author.id && user.role !== "admin") return send({ message: "You cannot delete this comment" }, 403);
@@ -367,12 +398,12 @@ createServer(async (req, res) => {
     if (req.method === "PATCH") {
       current.content = content;
       current.updatedAt = new Date().toISOString();
-      return send(current);
+      return send(serializeComment(current));
     }
     if (req.method === "POST" && !commentItem) {
       const created = { id: randomUUID(), blogId: blog.id, parentId: parent?.id || null, author: { id: user.id, displayName: user.displayName }, content, createdAt: now, updatedAt: now };
       comments.unshift(created);
-      return send(created, 201);
+      return send(serializeComment(created), 201);
     }
   }
   if (path === "/chat/conversations" && req.method === "POST") {

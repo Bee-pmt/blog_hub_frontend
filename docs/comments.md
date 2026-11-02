@@ -10,6 +10,10 @@ with the existing BlogHub account to post a comment or reply.
 - `src/modules/blogs/components/comment-section.tsx` contains the section and its
   small reusable form, list, and row subcomponents. Comments and open reply
   threads each have their own page state. Replies load only when opened.
+  Each parent button displays the server's `replyCount`, not the loaded reply count.
+- `src/modules/blogs/components/reaction-buttons.tsx` is shared by articles,
+  comments, and replies. It displays totals and accessible pressed states for
+  Like and Dislike, with a sign-in prompt for visitors.
 - `src/modules/blogs/store/services/commentApi.ts` defines RTK Query reads,
   create/reply/edit mutations, and deletion. Successful writes invalidate the
   comment lists for that blog so their items and totals refresh. An empty last
@@ -29,6 +33,54 @@ Text is rendered as plain React text with preserved line breaks. Forms trim inpu
 accept 1–2000 characters, prevent duplicate submission, and keep drafts on failure. Switching accounts or signing out clears local forms.
 Deleting a top-level comment warns that all its replies will also be deleted.
 Replies have no Reply action, so the UI supports one level only.
+
+## Reactions
+
+Blog totals are fetched separately using `GET /blogs/:id/reactions`. Visitors
+use the totals included in comment/reply lists. Signed-in users also fetch
+personalized summaries for the visible comments and expanded replies using
+`GET /comments/:id/reactions`. These GETs use the existing Bearer-token helper
+when signed in and the public API wrapper otherwise.
+
+Both blog and comment/reply votes use POST with `{ "type": "like" }` or
+`{ "type": "dislike" }`. The backend toggles an existing vote or replaces the
+opposite vote. The UI takes counts and selection from the successful response.
+It does not optimistically guess the result.
+
+Reaction POSTs explicitly disable the authentication helper's automatic 401
+retry. Duplicate clicks are blocked while submitting. After a network failure,
+timeout, or server error, a GET reconciles the summary before another vote is
+allowed. If that GET fails, use Refresh reactions; both vote buttons remain
+disabled until it succeeds. HTTP 401 follows the existing sign-out handling.
+
+Reaction query keys include the signed-in account ID. Existing Redux account
+changes clear the cache; the buttons also reset local state for the new account.
+Unused reaction summaries are removed immediately. Late mutation responses from
+a previous auth session cannot update the current cache. Personalized summaries
+are never put in the public Next.js server cache.
+
+Reply creation/deletion already invalidates the blog's comment lists. This
+refreshes both parent `replyCount` and independent reply-page totals.
+
+Manual reaction checks:
+
+1. As a visitor, read totals and click Like to see the sign-in prompt.
+2. Signed in, Like → Dislike → Dislike again. Confirm add, replace, and removal
+   with the right counts and selected button. Repeat for a comment and reply.
+3. Switch accounts and confirm no previous account's selection appears.
+4. Interrupt a reaction request. A summary GET must happen before another POST
+   can be made. If it fails, Refresh reactions must succeed first.
+5. Verify a 401 reaction POST is sent only once, and a missing/unpublished item
+   shows an error. Confirm replies still load only when opened.
+
+Run these browser checks against the isolated mock API:
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npx playwright test --grep 'comments (allow|create|let|recover)|reactions '
+```
+
+No new Vercel environment variables or backend changes are needed. Use the
+existing API base URL below and deploy the updated frontend code.
 
 ## Local checks
 

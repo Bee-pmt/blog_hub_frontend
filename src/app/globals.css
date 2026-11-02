@@ -754,6 +754,9 @@ label .form-control {
 .comment-form textarea { width: 100%; resize: vertical; }
 .comment-replies { margin-top: 1rem; padding-left: clamp(0.75rem, 3vw, 1.5rem); border-left: 2px solid var(--border); }
 .comment-section .actions { flex-wrap: wrap; }
+.reaction-controls { margin-block: 1rem; }
+.reaction-controls .actions { flex-wrap: wrap; }
+.reaction-controls button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
 .article-header {
   margin-block: 3rem 2rem;
 }

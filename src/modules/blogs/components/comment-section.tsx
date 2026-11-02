@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import ConfirmDialog from "@/modules/base/components/confirm-dialog";
+import ReactionButtons from "./reaction-buttons";
 import { queryError } from "@/lib/api/baseApi";
 import { dateLabel } from "@/lib/utils";
 import type { BlogComment } from "../types";
@@ -103,10 +104,11 @@ function CommentRow({ comment, blogId }: { comment: BlogComment; blogId: string 
       {editing ? (
         <CommentForm blogId={blogId} comment={comment} onDone={() => setEditing(false)} />
       ) : <p className="comment-content">{comment.content}</p>}
+      <ReactionButtons kind="comments" id={comment.id} totals={comment} />
       <div className="actions">
         {!comment.parentId && (
           <button className="text-link" aria-expanded={open} aria-controls={`replies-${comment.id}`} onClick={() => setOpen(!open)}>
-            {open ? "Hide replies" : "View replies / Reply"}
+            Replies ({comment.replyCount}){open ? " · Hide" : ""}
           </button>
         )}
         {own && !editing && <button className="text-link" onClick={() => setEditing(true)}>Edit</button>}

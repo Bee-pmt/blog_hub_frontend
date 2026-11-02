@@ -1,8 +1,37 @@
 import { baseApi } from "@/lib/api/baseApi";
-import type { BlogComment, CommentPage } from "../../types";
+import type { BlogComment, CommentPage, ReactionSummary, ReactionType } from "../../types";
+import type { RootState } from "@/lib/store";
+
+type ReactionTarget = { kind: "blogs" | "comments"; id: string; accountId?: string };
 
 export const commentApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    getReactions: builder.query<ReactionSummary, ReactionTarget>({
+      query: ({ kind, id, accountId }) => ({
+        route: `/${kind}/${encodeURIComponent(id)}/reactions`,
+        public: !accountId,
+      }),
+      keepUnusedDataFor: 0,
+    }),
+    react: builder.mutation<ReactionSummary, ReactionTarget & { accountId: string; type: ReactionType }>({
+      query: ({ kind, id, type }) => ({
+        route: `/${kind}/${encodeURIComponent(id)}/reactions`,
+        method: "POST",
+        body: JSON.stringify({ type }),
+        direct: true,
+        retryUnauthorized: false,
+      }),
+      async onQueryStarted({ kind, id, accountId }, { dispatch, queryFulfilled, getState }) {
+        const session = (getState() as RootState).auth;
+        try {
+          const { data } = await queryFulfilled;
+          if ((getState() as RootState).auth !== session) return;
+          dispatch(commentApi.util.updateQueryData("getReactions", { kind, id, accountId }, () => data));
+        } catch {
+          // The buttons report errors and reconcile uncertain results with a GET.
+        }
+      },
+    }),
     getComments: builder.query<CommentPage, { blogId: string; parentId?: string; page: number }>({
       query: ({ blogId, parentId, page }) => ({
         route: parentId
@@ -38,4 +67,7 @@ export const commentApi = baseApi.injectEndpoints({
   }),
 });
 
-export const { useGetCommentsQuery, useSaveCommentMutation, useDeleteCommentMutation } = commentApi;
+export const {
+  useGetCommentsQuery, useSaveCommentMutation, useDeleteCommentMutation,
+  useGetReactionsQuery, useReactMutation,
+} = commentApi;
