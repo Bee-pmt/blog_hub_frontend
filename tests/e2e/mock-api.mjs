@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 let requestLog = [], failRequest = null;
 let categories, tags, blogs, users, sessions, access, failSave, images, passwords, resetCodes, googleAccounts, auditLogs;
 let notifications;
+let comments;
 let chatConversations;
 let chatMessages;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
+  comments = [];
   chatConversations = [];
   chatMessages = [];
   notifications = [];
@@ -184,6 +186,10 @@ createServer(async (req, res) => {
     res.end(status === 204 ? undefined : JSON.stringify(value));
   };
   if (path === "/__requests") return send(requestLog);
+  if (path === "/__comment-fixtures") {
+    comments = data.items;
+    return send({ ok: true });
+  }
   if (path === "/__audit-fixtures") {
     auditLogs = data.items;
     return send({ ok: true });
@@ -335,6 +341,40 @@ createServer(async (req, res) => {
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
   if (path.startsWith("/admin/") && user.role !== "admin")
     return send({ message: "Admin required" }, 403);
+  const blogComments = /^\/blogs\/([^/]+)\/comments$/.exec(path);
+  const replies = /^\/comments\/([^/]+)\/replies$/.exec(path);
+  const commentItem = /^\/comments\/([^/]+)$/.exec(path);
+  if (blogComments || replies || commentItem) {
+    const parent = replies ? comments.find(item => item.id === replies[1]) : null;
+    const current = commentItem ? comments.find(item => item.id === commentItem[1]) : null;
+    const blogId = blogComments?.[1] || parent?.blogId || current?.blogId;
+    const blog = blogs.find(item => item.id === blogId && item.status === "published");
+    if (!blog || (replies && (!parent || parent.parentId))) return send({ message: "Story or comment is unavailable" }, 404);
+    if (req.method === "GET" && !commentItem) {
+      const items = comments.filter(item => item.blogId === blog.id && item.parentId === (parent?.id || null));
+      const page = Number(url.searchParams.get("page") || 1);
+      const limit = Number(url.searchParams.get("limit") || 10);
+      return send({ items: items.slice((page - 1) * limit, page * limit), page, limit, total: items.length, totalPages: Math.ceil(items.length / limit) });
+    }
+    if (req.method === "DELETE") {
+      if (user.id !== current.author.id && user.role !== "admin") return send({ message: "You cannot delete this comment" }, 403);
+      comments = comments.filter(item => item.id !== current.id && item.parentId !== current.id);
+      return send(null, 204);
+    }
+    if (req.method === "PATCH" && user.id !== current.author.id) return send({ message: "You cannot edit this comment" }, 403);
+    const content = typeof data.content === "string" ? data.content.trim() : "";
+    if (!content || content.length > 2000) return send({ message: "Use 1–2000 characters" }, 400);
+    if (req.method === "PATCH") {
+      current.content = content;
+      current.updatedAt = new Date().toISOString();
+      return send(current);
+    }
+    if (req.method === "POST" && !commentItem) {
+      const created = { id: randomUUID(), blogId: blog.id, parentId: parent?.id || null, author: { id: user.id, displayName: user.displayName }, content, createdAt: now, updatedAt: now };
+      comments.unshift(created);
+      return send(created, 201);
+    }
+  }
   if (path === "/chat/conversations" && req.method === "POST") {
     const recipient = users.find(item => item.id === data.recipientId);
     if (!recipient) return send({ message: "Recipient not found" }, 404);

@@ -1645,3 +1645,140 @@ test("main pages fit mobile, tablet and desktop and keep form controls labelled"
     await page.screenshot({ path: test.info().outputPath(`settings-${width}.png`), fullPage: true });
   }
 });
+
+function commentFixture(id: string, content: string, parentId: string | null = null, authorId = "other") {
+  return { id, blogId: "story-1", parentId, author: { id: authorId, displayName: authorId === "author" ? "Alex Writer" : "Other Writer" }, content, createdAt: "2026-10-07T00:00:00.000Z", updatedAt: "2026-10-07T00:00:00.000Z" };
+}
+
+test("comments allow public reading, lazy replies and separate pagination without HTML rendering", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [
+    ...Array.from({ length: 11 }, (_, index) => commentFixture(`comment-${index}`, index === 0 ? '<img src=x onerror="alert(1)"> Plain text' : `Comment ${index}`)),
+    ...Array.from({ length: 11 }, (_, index) => commentFixture(`reply-${index}`, `Reply ${index}`, "comment-0")),
+  ] } });
+  await page.goto("/blogs/thoughtful-story-1");
+  const section = page.getByRole("region", { name: "Comments", exact: true });
+  await expect(section.getByRole("heading", { name: "Comments (11)", exact: true })).toBeVisible();
+  await expect(section.getByRole("link", { name: "Sign in to comment" })).toHaveAttribute("href", "/login?returnTo=%2Fblogs%2Fthoughtful-story-1");
+  await expect(section.locator(".comment-content").first()).toHaveText('<img src=x onerror="alert(1)"> Plain text');
+  await expect(section.locator("img")).toHaveCount(0);
+  expect((await (await request.get(`${api}/__requests`)).json()).some((item: { path: string }) => item.path.includes("/replies"))).toBe(false);
+  const first = section.locator(":scope > .comment-list > li").first();
+  await first.getByRole("button", { name: "View replies / Reply" }).click();
+  await expect(first.locator(".comment-replies .comment-row")).toHaveCount(10);
+  await first.getByRole("navigation", { name: "Reply pages" }).getByRole("button", { name: "Next" }).click();
+  await expect(first.locator(".comment-replies .comment-content")).toHaveText("Reply 10");
+  await expect(first.locator(".comment-replies").getByRole("button", { name: "View replies / Reply" })).toHaveCount(0);
+  await expect(section.getByRole("navigation", { name: "Comment pages" })).toContainText("Page 1 of 2");
+  await section.getByRole("navigation", { name: "Comment pages" }).getByRole("button", { name: "Next" }).click();
+  await expect(section.locator(":scope > .comment-list > li .comment-content")).toHaveText("Comment 10");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await section.screenshot({ path: test.info().outputPath("comments-mobile-light.png") });
+  await page.getByRole("switch", { name: "Dark mode" }).click();
+  await section.screenshot({ path: test.info().outputPath("comments-mobile-dark.png") });
+});
+
+test("comments create, edit, reply and cascade delete with validation and safe permissions", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [commentFixture("others", "Someone else's comment")] } });
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const section = page.getByRole("region", { name: "Comments", exact: true });
+  await expect(section.getByRole("heading", { name: "Comments (1)", exact: true })).toBeVisible();
+  const others = section.locator(".comment-row").filter({ has: page.getByText("Someone else's comment", { exact: true }) });
+  // Owning the blog does not grant permission to change another user's comment.
+  await expect(others.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+  await expect(others.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+  await section.getByRole("textbox", { name: "Your comment", exact: true }).fill("   ");
+  await section.getByRole("button", { name: "Post comment", exact: true }).click();
+  await expect(section.getByRole("alert")).toContainText("Use 1–2000 characters");
+  await request.post(`${api}/__fail-request`, { data: { path: "/blogs/story-1/comments", method: "POST", status: 400, message: "Invalid comment" } });
+  await section.getByRole("textbox", { name: "Your comment", exact: true }).fill("  My new comment  ");
+  await section.getByRole("button", { name: "Post comment", exact: true }).click();
+  await expect(section.getByRole("alert")).toHaveText("Invalid comment");
+  await expect(section.getByRole("textbox", { name: "Your comment", exact: true })).toHaveValue("  My new comment  ");
+  await page.route(`${api}/blogs/story-1/comments`, async route => {
+    if (route.request().method() === "POST") await new Promise(resolve => setTimeout(resolve, 400));
+    await route.continue();
+  });
+  await section.getByRole("button", { name: "Post comment", exact: true }).click();
+  await expect(section.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await expect(section.getByRole("heading", { name: "Comments (2)", exact: true })).toBeVisible();
+  const own = section.locator(":scope > .comment-list > li").first();
+  await expect(own.locator(".comment-content")).toHaveText("My new comment");
+  await own.getByRole("button", { name: "Edit", exact: true }).click();
+  await own.getByRole("textbox", { name: "Edit your comment", exact: true }).fill("Updated comment");
+  await own.getByRole("button", { name: "Save changes" }).click();
+  await expect(own.locator(".comment-content")).toHaveText("Updated comment");
+  await expect(own.getByText("Edited", { exact: true })).toBeVisible();
+  await own.getByRole("button", { name: "View replies / Reply" }).click();
+  await expect(own.getByText("No replies yet.")).toBeVisible();
+  await own.getByRole("textbox", { name: "Your reply", exact: true }).fill("First reply");
+  await own.getByRole("button", { name: "Post reply" }).click();
+  await expect(own.locator(".comment-replies .comment-content")).toHaveText("First reply");
+  const reply = own.locator(".comment-replies .comment-row");
+  await reply.getByRole("button", { name: "Edit", exact: true }).click();
+  await reply.getByRole("textbox", { name: "Edit your comment", exact: true }).fill("Edited reply");
+  await reply.getByRole("button", { name: "Save changes" }).click();
+  await expect(reply.locator(".comment-content")).toHaveText("Edited reply");
+  await own.locator(":scope > .actions").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("all its replies");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await own.locator(":scope > .actions").getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(section.getByRole("heading", { name: "Comments (1)", exact: true })).toBeVisible();
+  await expect(section.getByText("Edited reply", { exact: true })).toHaveCount(0);
+});
+
+test("comments let admins delete others but not edit them and recover from permission and missing-post errors", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [
+    commentFixture("parent", "Other person's comment"), commentFixture("child", "Other person's reply", "parent"),
+  ] } });
+  await login(page, "admin@test.local");
+  await page.goto("/blogs/thoughtful-story-1");
+  const section = page.getByRole("region", { name: "Comments", exact: true });
+  await expect(section.getByText("Other person's comment", { exact: true })).toBeVisible();
+  await expect(section.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+  await section.getByRole("button", { name: "View replies / Reply" }).click();
+  const reply = section.locator(".comment-replies .comment-row");
+  await expect(reply.getByText("Other person's reply", { exact: true })).toBeVisible();
+  await request.post(`${api}/__fail-request`, { data: { path: "/comments/child", method: "DELETE", status: 403, message: "Permission denied" } });
+  await reply.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(reply.getByRole("alert")).toHaveText("Permission denied");
+  await reply.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(section.getByText("No replies yet.")).toBeVisible();
+  await page.route(`${api}/blogs/story-1/comments?*`, route => route.fulfill({ status: 404, json: { message: "Story is unavailable" } }));
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Profile", exact: true })).toBeVisible();
+  await expect(section.getByRole("alert")).toContainText("Story is unavailable");
+  await page.unroute(`${api}/blogs/story-1/comments?*`);
+  await section.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(section.getByText("Other person's comment", { exact: true })).toBeVisible();
+});
+
+test("comments recover pagination after deleting the last item on a comment or reply page", async ({ page, request }) => {
+  await request.post(`${api}/__comment-fixtures`, { data: { items: [
+    ...Array.from({ length: 11 }, (_, index) => commentFixture(`root-${index}`, `Root ${index}`, null, "author")),
+    ...Array.from({ length: 11 }, (_, index) => commentFixture(`child-${index}`, `Child ${index}`, "root-0", "author")),
+  ] } });
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const section = page.getByRole("region", { name: "Comments", exact: true });
+  const first = section.locator(":scope > .comment-list > li").first();
+  await first.getByRole("button", { name: "View replies / Reply" }).click();
+  await first.getByRole("navigation", { name: "Reply pages" }).getByRole("button", { name: "Next" }).click();
+  await expect(first.locator(".comment-replies .comment-content")).toHaveText("Child 10");
+  await first.locator(".comment-replies").getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(first.getByRole("heading", { name: "Replies (10)", exact: true })).toBeVisible();
+  await expect(first.locator(".comment-replies .comment-row")).toHaveCount(10);
+  await expect(first.getByRole("navigation", { name: "Reply pages" })).toHaveCount(0);
+  await section.getByRole("navigation", { name: "Comment pages" }).getByRole("button", { name: "Next" }).click();
+  await expect(section.locator(".comment-content")).toHaveText("Root 10");
+  await section.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(section.getByRole("heading", { name: "Comments (10)", exact: true })).toBeVisible();
+  await expect(section.locator(":scope > .comment-list > li")).toHaveCount(10);
+  await expect(section.getByRole("navigation", { name: "Comment pages" })).toHaveCount(0);
+});

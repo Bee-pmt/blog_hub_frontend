@@ -1,7 +1,7 @@
 "use client";
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { BaseQueryFn } from "@reduxjs/toolkit/query";
-import { ApiError, errorMessage } from "@/lib/api-client";
+import { API_BASE, ApiError, apiWrapper, errorMessage, unwrapApiResult } from "@/lib/api-client";
 import { authenticatedRequest, clearSession } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
 import type { RootState } from "@/lib/store";
@@ -12,6 +12,7 @@ export type RequestArgs = {
   method?: string;
   body?: string | FormData;
   direct?: boolean;
+  public?: boolean;
 };
 export type RequestError = { status: number; message: string };
 const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
@@ -20,6 +21,13 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
 ) => {
   const session = (api.getState() as RootState).auth;
   try {
+    if (args.public) {
+      const data = unwrapApiResult(await apiWrapper({
+        endpoint: `${API_BASE}${args.route}`,
+        signal: api.signal,
+      }));
+      return { data };
+    }
     const send =
       args.direct || !args.method || args.method === "GET"
         ? authenticatedRequest
@@ -30,7 +38,7 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
     return { data: data ?? null };
   } catch (failure) {
     const status = failure instanceof ApiError ? failure.status : 0;
-    if (status === 401 && (api.getState() as RootState).auth === session) {
+    if (!args.public && status === 401 && (api.getState() as RootState).auth === session) {
       clearSession();
       api.dispatch(sessionEnded());
     }
@@ -48,6 +56,7 @@ export const baseApi = createApi({
     "Notification",
     "Conversation",
     "ChatMessage",
+    "Comment",
   ],
   keepUnusedDataFor: 60,
   refetchOnMountOrArgChange: 60,

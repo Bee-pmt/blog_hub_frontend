@@ -8,6 +8,7 @@ import { dateLabel, queryString } from "@/lib/utils";
 import { getCachedBlog } from "@/modules/blogs/cache";
 import Markdown from "@/modules/blogs/components/markdown";
 import BlogImage from "@/modules/blogs/components/blog-image";
+import CommentSection from "@/modules/blogs/components/comment-section";
 const getPost = cache(getCachedBlog);
 export async function generateMetadata({ params }: ModulePageProps) {
   const { slug } = await params;
@@ -85,6 +86,7 @@ async function Article({ params }: ModulePageProps) {
         <BlogImage src={post.coverImageUrl} className="article-cover" />
       )}
       <Markdown content={post.content} />
+      {post.status === "published" && <CommentSection blogId={post.id} />}
     </article>
   );
 }

@@ -20,6 +20,24 @@ export type BlogSummary = {
 
 export type Blog = BlogSummary & { content: string };
 
+export type BlogComment = {
+  id: string;
+  blogId: string;
+  parentId: string | null;
+  author: { id: string; displayName: string };
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CommentPage = {
+  items: BlogComment[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
 export type BlogPage = {
   items: (BlogSummary & { excerpt: string })[];
   page: number;
