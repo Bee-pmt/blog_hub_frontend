@@ -756,6 +756,7 @@ label .form-control {
 .comment-section .actions { flex-wrap: wrap; }
 .reaction-controls { margin-block: 1rem; }
 .reaction-controls .actions { flex-wrap: wrap; }
+.reaction-controls .button { gap: 0.5rem; }
 .reaction-controls button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
 .article-header {
   margin-block: 3rem 2rem;

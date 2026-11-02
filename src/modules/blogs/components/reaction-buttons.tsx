@@ -67,12 +67,20 @@ function Reactions({ kind, id, totals, accountId, sessionLoading }: Props & {
     <div className="reaction-controls">
       <div className="actions" role="group" aria-label={kind === "blogs" ? "Story reactions" : "Comment reactions"}>
         <button className="button button-secondary" type="button" disabled={disabled}
+          aria-label={`Like (${summary?.likeCount ?? "…"})`} title="Like"
           aria-pressed={summary?.myReaction === "like"} onClick={() => void choose("like")}>
-          Like ({summary?.likeCount ?? "…"})
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7 10v12H3V10h4Zm0 0 5-8a3 3 0 0 1 3 3v5h5a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 18.6 22H7" />
+          </svg>
+          <span>{summary?.likeCount ?? "…"}</span>
         </button>
         <button className="button button-secondary" type="button" disabled={disabled}
+          aria-label={`Dislike (${summary?.dislikeCount ?? "…"})`} title="Dislike"
           aria-pressed={summary?.myReaction === "dislike"} onClick={() => void choose("dislike")}>
-          Dislike ({summary?.dislikeCount ?? "…"})
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M17 14V2h4v12h-4Zm0 0-5 8a3 3 0 0 1-3-3v-5H4a2 2 0 0 1-2-2.3l1.4-8A2 2 0 0 1 5.4 2H17" />
+          </svg>
+          <span>{summary?.dislikeCount ?? "…"}</span>
         </button>
       </div>
       {(sessionLoading || isFetching || isLoading) && <p className="field-help" role="status">{isLoading ? "Saving reaction…" : "Loading reactions…"}</p>}
