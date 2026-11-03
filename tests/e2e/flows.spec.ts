@@ -1890,3 +1890,156 @@ test("reactions handle unauthorized POSTs once and missing summaries safely", as
   await expect(page.getByText("Story is unavailable", { exact: true })).toBeVisible();
   await expect(blog.getByRole("button", { name: /^Like/ })).toBeDisabled();
 });
+
+test("FAQ help is public, filters topics, shows fallback suggestions and preserves history across navigation", async ({ page, request }) => {
+  const before = await (await request.get(`${api}/__requests`)).json();
+  expect(before.some((item: { path: string }) => item.path.includes("/faq/"))).toBe(false);
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "BlogHub Help", exact: true });
+  await expect(panel.getByRole("textbox", { name: "Ask a question" })).toBeFocused();
+  await expect(panel.getByText(/Welcome to BlogHub Help/)).toBeVisible();
+  await panel.getByLabel("Help category").selectOption("faq-blogs");
+  await expect(panel.getByRole("button", { name: "How do I create a blog post?", exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "How do I log in?", exact: true })).toHaveCount(0);
+  await panel.getByRole("button", { name: "How do I create a blog post?", exact: true }).click();
+  await expect(panel.getByText("Open your dashboard and choose Write a story.", { exact: true })).toBeVisible();
+  await panel.getByRole("textbox", { name: "Ask a question" }).fill("Something I cannot find");
+  await panel.getByRole("textbox", { name: "Ask a question" }).press("Enter");
+  await expect(panel.getByText("I couldn't find an exact answer. Try one of these related questions.", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await panel.getByRole("button", { name: "How do I log in?", exact: true }).click();
+  await expect(panel.getByText("Use your email and password on the sign-in page.", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Help", exact: true })).toBeFocused();
+  await page.getByRole("link", { name: "BlogHub home", exact: true }).click();
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  await expect(panel.getByText("Use your email and password on the sign-in page.", { exact: true })).toBeVisible();
+  await panel.getByLabel("Help category").selectOption("faq-empty");
+  await expect(panel.getByText("No suggested questions in this category. You can still type a question.", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bounds = await panel.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+  await panel.screenshot({ path: test.info().outputPath("faq-mobile-light.png") });
+  await panel.getByRole("button", { name: "Close help" }).click();
+  await page.getByRole("switch", { name: "Dark mode" }).click();
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  await panel.screenshot({ path: test.info().outputPath("faq-mobile-dark.png") });
+});
+
+test("FAQ help validates input, handles unavailable answers and blocks overlapping submissions", async ({ page, request }) => {
+  await login(page);
+  const credentials: Array<{ authorization?: string; cookie?: string }> = [];
+  page.on("request", req => {
+    if (req.url().startsWith(`${api}/faq/`)) credentials.push(req.headers());
+  });
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "BlogHub Help" });
+  const input = panel.getByRole("textbox", { name: "Ask a question" });
+  await input.fill(" !!! ");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Use 1–500 characters");
+  const calls = await (await request.get(`${api}/__requests`)).json();
+  expect(calls.filter((item: { path: string }) => item.path === "/api/v1/faq/ask")).toHaveLength(0);
+  await request.post(`${api}/__fail-request`, { data: { path: "/faq/ask", method: "POST", status: 400, message: "Question is invalid" } });
+  await input.fill("  How do I log in?  ");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("alert")).toHaveText("Question is invalid");
+  await expect(input).toHaveValue("  How do I log in?  ");
+  await request.post(`${api}/__fail-request`, { data: { path: "/faq/faq-create", method: "GET", status: 404, message: "This FAQ is unavailable" } });
+  await panel.getByRole("button", { name: "How do I create a blog post?", exact: true }).click();
+  await expect(panel.getByRole("alert")).toHaveText("This FAQ is unavailable");
+  let finish!: () => void;
+  const wait = new Promise<void>(resolve => { finish = resolve; });
+  let posts = 0;
+  let body = "";
+  await page.route(`${api}/faq/ask`, async route => {
+    posts++;
+    body = route.request().postData() || "";
+    await wait;
+    await route.continue();
+  });
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Sending…" })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "How do I create a blog post?", exact: true })).toBeDisabled();
+  await panel.locator("form").dispatchEvent("submit");
+  expect(posts).toBe(1);
+  finish();
+  await expect(panel.getByText("Use your email and password on the sign-in page.", { exact: true })).toBeVisible();
+  expect(JSON.parse(body)).toEqual({ question: "How do I log in?" });
+  expect(posts).toBe(1);
+  expect(credentials.length).toBeGreaterThan(0);
+  for (const headers of credentials) {
+    expect(headers.authorization).toBeUndefined();
+    expect(headers.cookie).toBeUndefined();
+  }
+});
+
+test("FAQ help respects Retry-After across closing and reopening and never retries automatically", async ({ page }) => {
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "BlogHub Help" });
+  await expect(panel.getByRole("button", { name: "How do I log in?", exact: true })).toBeVisible();
+  let attempts = 0;
+  await page.route(`${api}/faq/ask`, async route => {
+    attempts++;
+    if (attempts === 1) await route.fulfill({
+      status: 429,
+      headers: { "Retry-After": "2", "Access-Control-Expose-Headers": "Retry-After", "Access-Control-Allow-Origin": "http://localhost:3001" },
+      json: { message: "Too many questions" },
+    });
+    else await route.continue();
+  });
+  await panel.getByRole("textbox", { name: "Ask a question" }).fill("How do I log in?");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Please wait");
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "How do I log in?", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeEnabled({ timeout: 6000 });
+  expect(attempts).toBe(1);
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByText("Use your email and password on the sign-in page.", { exact: true })).toBeVisible();
+  expect(attempts).toBe(2);
+});
+
+test("FAQ help retries metadata manually, renders plain text and keeps older messages in view", async ({ page }) => {
+  await page.route(`${api}/faq/categories`, route => route.fulfill({ status: 503, json: { message: "Categories unavailable" } }));
+  await page.route(`${api}/faq/suggestions?*`, route => route.fulfill({ status: 503, json: { message: "Suggestions unavailable" } }));
+  await page.getByRole("button", { name: "Help", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: "BlogHub Help" });
+  await expect(panel.getByText("Categories unavailable", { exact: false })).toBeVisible();
+  await expect(panel.getByText("Suggestions unavailable", { exact: false })).toBeVisible();
+  await page.unroute(`${api}/faq/categories`);
+  await page.unroute(`${api}/faq/suggestions?*`);
+  await panel.getByRole("button", { name: "Retry categories" }).click();
+  await panel.getByRole("button", { name: "Retry suggestions" }).click();
+  await expect(panel.getByRole("button", { name: "How do I log in?", exact: true })).toBeVisible();
+  let attempts = 0;
+  await page.route(`${api}/faq/ask`, async route => {
+    attempts++;
+    if (attempts === 1) await route.abort("failed");
+    else await route.fulfill({ json: { found: true, answer: '<img src=x onerror="alert(1)">\n' + "A useful predefined answer.\n".repeat(45), matchedQuestion: "A question", category: "Account", suggestions: [] } });
+  });
+  const input = panel.getByRole("textbox", { name: "Ask a question" });
+  await input.fill("My first question");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Unable to reach BlogHub");
+  expect(attempts).toBe(1);
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.locator(".faq-message-support").last()).toContainText('<img src=x onerror="alert(1)">');
+  await expect(panel.locator("img")).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  await panel.locator(".faq-messages").evaluate(element => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await input.fill("My next question");
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  expect(await panel.locator(".faq-messages").evaluate(element => element.scrollTop)).toBe(0);
+});

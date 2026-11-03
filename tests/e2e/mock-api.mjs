@@ -364,6 +364,33 @@ createServer(async (req, res) => {
     }
     return send(reactionSummary(kind, id, user?.id));
   }
+  if (path.startsWith("/faq/")) {
+    const faqCategories = [
+      { id: "faq-account", name: "Account", slug: "account", createdAt: now },
+      { id: "faq-blogs", name: "Blog Management", slug: "blogs", createdAt: now },
+      { id: "faq-empty", name: "Other", slug: "other", createdAt: now },
+    ];
+    const faqs = [
+      { id: "faq-login", question: "How do I log in?", answer: "Use your email and password on the sign-in page.", category: "Account", categoryId: "faq-account" },
+      { id: "faq-create", question: "How do I create a blog post?", answer: "Open your dashboard and choose Write a story.", category: "Blog Management", categoryId: "faq-blogs" },
+    ];
+    const summaries = items => items.map(({ id, question, category }) => ({ id, question, category }));
+    if (path === "/faq/categories") return send(faqCategories);
+    if (path === "/faq/suggestions") {
+      const categoryId = url.searchParams.get("categoryId");
+      return send(summaries(faqs.filter(item => !categoryId || item.categoryId === categoryId)).slice(0, Number(url.searchParams.get("limit") || 5)));
+    }
+    if (path === "/faq/ask" && req.method === "POST") {
+      const question = typeof data.question === "string" ? data.question.trim() : "";
+      if (!question || question.length > 500 || !/[\p{L}\p{N}]/u.test(question)) return send({ message: "Invalid question" }, 400);
+      const match = faqs.find(item => item.question.toLowerCase() === question.toLowerCase());
+      return send(match
+        ? { found: true, answer: match.answer, matchedQuestion: match.question, category: match.category, suggestions: [] }
+        : { found: false, answer: "I couldn't find an exact answer. Try one of these related questions.", matchedQuestion: null, category: null, suggestions: summaries(faqs) });
+    }
+    const item = faqs.find(item => `/faq/${item.id}` === path);
+    return item ? send(item) : send({ message: "This FAQ is unavailable" }, 404);
+  }
   const protectedPath =
     path.startsWith("/chat/") ||
     path.startsWith("/me/") ||

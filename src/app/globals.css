@@ -757,6 +757,26 @@ label .form-control {
 .reaction-controls { margin-block: 1rem; }
 .reaction-controls .actions { flex-wrap: wrap; }
 .reaction-controls .button { gap: 0.5rem; }
+.faq-trigger { position: fixed; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 20; width: 3.5rem; height: 3.5rem; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--border); background: var(--foreground); color: var(--background); cursor: pointer; box-shadow: 0 4px 16px #0003; }
+.faq-panel { position: fixed; inset: auto 1rem max(1rem, env(safe-area-inset-bottom)) auto; margin: 0; width: min(420px, calc(100vw - 2rem)); height: min(640px, calc(100dvh - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--background); color: var(--foreground); box-shadow: 0 8px 32px #0004; }
+.faq-panel[open] { display: flex; flex-direction: column; }
+.faq-panel::backdrop { background: #0003; }
+.faq-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--border); }
+.faq-heading h2 { margin: 0; font-size: 1.15rem; }
+.faq-close { width: 2.75rem; height: 2.75rem; font-size: 1.5rem; flex-shrink: 0; }
+.faq-filter { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.faq-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: 1rem; }
+.faq-history { list-style: none; margin: 0; padding: 0; }
+.faq-message { padding: 0.75rem; border-radius: 0.6rem; background: var(--subtle); margin-block: 0.75rem; max-width: 95%; }
+.faq-message-user { background: var(--foreground); color: var(--background); margin-left: auto; }
+.faq-message p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.faq-suggestions { display: flex; flex-direction: column; gap: 0.5rem; margin-block: 0.75rem; }
+.faq-suggestions .button { text-align: left; justify-content: flex-start; padding: 0.65rem 0.75rem; overflow-wrap: anywhere; }
+.faq-form { padding: 1rem; border-top: 1px solid var(--border); }
+.faq-form .notice { margin-bottom: 0.75rem; max-height: 7rem; overflow-y: auto; }
+.faq-input-row { display: flex; gap: 0.5rem; }
+.faq-input-row input { min-width: 0; flex: 1; }
+.faq-input-row .button { padding-inline: 1rem; }
 .reaction-controls button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
 .article-header {
   margin-block: 3rem 2rem;

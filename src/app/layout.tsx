@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import localFont from "next/font/local";
 import Link from "next/link";
 import ThemeSelect from "@/modules/base/components/theme-select";
+import FaqHelp from "@/modules/base/components/faq-help";
 import ReduxProvider from "@/lib/ReduxProvider";
 import { AccountNav } from "@/modules/auth/components/account-nav";
 import "./globals.css";
@@ -93,6 +94,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </footer>
           </ReduxProvider>
         </Suspense>
+        <FaqHelp />
         <Toaster
           position="top-right"
           closeButton
