@@ -5,7 +5,7 @@ import { API_BASE, ApiError, apiWrapper, errorMessage, unwrapApiResult } from "@
 import { authenticatedRequest, clearSession } from "@/lib/session";
 import { contentRequest } from "@/lib/content-client";
 import type { RootState } from "@/lib/store";
-import { sessionEnded } from "@/modules/auth/store/slices/authSlice";
+import { refreshProfile, sessionEnded } from "@/modules/auth/store/slices/authSlice";
 
 export type RequestArgs = {
   route: string;
@@ -44,6 +44,8 @@ const baseQuery: BaseQueryFn<RequestArgs, unknown, RequestError> = async (
       clearSession();
       api.dispatch(sessionEnded());
     }
+    if (!args.public && status === 403 && (api.getState() as RootState).auth === session)
+      void api.dispatch(refreshProfile());
     return { error: { status, message: errorMessage(failure) } };
   }
 };
@@ -53,6 +55,8 @@ export const baseApi = createApi({
   tagTypes: [
     "Blog",
     "BlogAudit",
+    "BlogTrash",
+    "Reaction",
     "Taxonomy",
     "User",
     "Notification",

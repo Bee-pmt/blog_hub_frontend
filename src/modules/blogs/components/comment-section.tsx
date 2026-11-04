@@ -1,4 +1,5 @@
 "use client";
+import { hasPermission } from "@/modules/auth/permissions";
 
 import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -116,7 +117,7 @@ function CommentRow({ comment, blogId }: { comment: BlogComment; blogId: string 
           </button>
         )}
         {own && !editing && <button className="text-link" onClick={() => setEditing(true)}>Edit</button>}
-        {(own || user?.role === "admin") && <button className="text-link" disabled={isLoading} onClick={() => setDeleting(true)}>Delete</button>}
+        {(own || hasPermission(user, "comments.delete")) && <button className="text-link" disabled={isLoading} onClick={() => setDeleting(true)}>Delete</button>}
       </div>
       {error && <p className="notice" role="alert">{error}</p>}
       {!comment.parentId && (

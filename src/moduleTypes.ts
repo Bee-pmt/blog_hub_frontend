@@ -9,9 +9,10 @@ export type ModuleRoute = {
   component: ComponentType<ModulePageProps>;
   title?: string;
   access?: "account" | "admin";
+  permission?: string;
   metadata?: (props: ModulePageProps) => Promise<Metadata>;
 };
-export type ModuleNavItem = { label: string; href: string; admin?: boolean };
+export type ModuleNavItem = { label: string; href: string; admin?: boolean; permission?: string };
 export type ModuleManifest = {
   id: string;
   name: string;

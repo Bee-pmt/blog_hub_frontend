@@ -12,6 +12,7 @@ export const commentApi = baseApi.injectEndpoints({
         public: !accountId,
       }),
       keepUnusedDataFor: 0,
+      providesTags: ["Reaction"],
     }),
     react: builder.mutation<ReactionSummary, ReactionTarget & { accountId: string; type: ReactionType }>({
       query: ({ kind, id, type }) => ({

@@ -2,7 +2,8 @@ export type User = {
   id: string;
   displayName: string;
   email: string;
-  role: "author" | "admin";
+  role: "author" | "admin" | "super_admin";
+  permissions?: string[];
   createdAt: string;
   updatedAt: string;
 };

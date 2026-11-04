@@ -33,6 +33,23 @@ export const restoreAuth = createAsyncThunk("auth/restore", async () => {
     throw error;
   }
 });
+export const refreshProfile = createAsyncThunk("auth/profile", async (_, { getState, dispatch }) => {
+  const expectedUser = (getState() as { auth: AuthState }).auth.user;
+  const expectedId = expectedUser?.id;
+  if (!expectedId) return null;
+  try {
+    const user = await getCurrentUser(authenticatedRequest);
+    return (getState() as { auth: AuthState }).auth.user === expectedUser ? { expectedId, user } : null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 &&
+      (getState() as { auth: AuthState }).auth.user === expectedUser) {
+      clearSession();
+      dispatch(sessionEnded());
+    }
+    throw error;
+  }
+});
+
 export const loginAuth = createAsyncThunk(
   "auth/login",
   async (form: FormData) => {
@@ -129,6 +146,10 @@ const authSlice = createSlice({
     },
   },
   extraReducers(builder) {
+    builder.addCase(refreshProfile.fulfilled, (state, action) => {
+      if (action.payload && state.user?.id === action.payload.expectedId)
+        state.user = action.payload.user;
+    });
     for (const operation of [restoreAuth, loginAuth, googleLoginAuth]) {
       builder.addCase(operation.pending, (state, action) => {
         state.loading = true;

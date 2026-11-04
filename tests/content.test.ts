@@ -89,3 +89,34 @@ describe("public content caching", () => {
     expect(vi.mocked(updateTag).mock.calls).toEqual([["blogs"]]);
   });
 });
+
+describe("Trash cache writes", () => {
+  it.each([
+    ["/me/blog-trash/story-1/restore", "POST"],
+    ["/admin/blog-trash/story-1/restore", "POST"],
+    ["/me/blog-trash/story-1", "DELETE"],
+    ["/admin/blog-trash/story-1", "DELETE"],
+  ])("forwards %s %s through authenticated cache invalidation", async (path, method) => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await mutateContentAction(path, method, undefined, "token")).toMatchObject({ ok: true });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(vi.mocked(updateTag).mock.calls).toEqual([["blogs"]]);
+    expect(fetcher.mock.calls[0][1].body).toBeUndefined();
+  });
+  it.each([404, 409])("expires stale public data on a %s response without retrying", async status => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ message: "State changed" }, { status }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await mutateContentAction("/blogs/story-1", "DELETE", undefined, "token")).toMatchObject({ ok: false, status });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(updateTag).toHaveBeenCalledWith("blogs");
+  });
+});
+
+it("preserves the optional blog deletion version check", async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await mutateContentAction("/blogs/story-1?version=7", "DELETE", undefined, "token")).toMatchObject({ ok: true });
+  expect(String(fetcher.mock.calls[0][0])).toContain("/blogs/story-1?version=7");
+  expect(await mutateContentAction("/blogs/story-1?version=7&other=1", "DELETE", undefined, "token")).toMatchObject({ ok: false, status: 400 });
+});

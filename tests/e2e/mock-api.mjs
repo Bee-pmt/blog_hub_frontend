@@ -8,6 +8,8 @@ let comments;
 let reactions;
 let chatConversations;
 let chatMessages;
+const grants = ["blogs.moderate", "blogs.delete", "blogs.restore", "blogs.purge", "taxonomy.manage", "taxonomy.delete", "comments.delete", "faqs.manage", "faqs.delete", "users.manage", "users.grant_access"];
+const can = (user, permission) => user?.permissions?.includes(permission) ?? false;
 const now = "2026-10-07T00:00:00.000Z";
 function reset() {
   comments = [];
@@ -38,7 +40,8 @@ function reset() {
       id: "admin",
       displayName: "Sam Editor",
       email: "admin@test.local",
-      role: "admin",
+      role: "super_admin",
+      permissions: [...grants],
       createdAt: now,
       updatedAt: now,
     },
@@ -216,6 +219,10 @@ createServer(async (req, res) => {
     // Per-user conversation responses, matching the public chat REST contract.
     chatConversations = data.items;
     chatMessages = data.messages || [];
+    return send({ ok: true });
+  }
+  if (path === "/__user-access") {
+    Object.assign(users.find(user => user.id === data.id), data);
     return send({ ok: true });
   }
   if (path === "/__fail-request") {
@@ -397,7 +404,7 @@ createServer(async (req, res) => {
     path.startsWith("/admin/") ||
     req.method !== "GET";
   if (protectedPath && !user) return send({ message: "Sign in required" }, 401);
-  if (path.startsWith("/admin/") && user.role !== "admin")
+  if (path.startsWith("/admin/") && !["admin", "super_admin"].includes(user.role))
     return send({ message: "Admin required" }, 403);
   const blogComments = /^\/blogs\/([^/]+)\/comments$/.exec(path);
   const replies = /^\/comments\/([^/]+)\/replies$/.exec(path);
@@ -406,7 +413,7 @@ createServer(async (req, res) => {
     const parent = replies ? comments.find(item => item.id === replies[1]) : null;
     const current = commentItem ? comments.find(item => item.id === commentItem[1]) : null;
     const blogId = blogComments?.[1] || parent?.blogId || current?.blogId;
-    const blog = blogs.find(item => item.id === blogId && item.status === "published");
+    const blog = blogs.find(item => item.id === blogId && item.status === "published" && !item.deletedAt);
     if (!blog || (replies && (!parent || parent.parentId))) return send({ message: "Story or comment is unavailable" }, 404);
     if (req.method === "GET" && !commentItem) {
       const items = comments.filter(item => item.blogId === blog.id && item.parentId === (parent?.id || null));
@@ -415,7 +422,7 @@ createServer(async (req, res) => {
       return send({ items: items.slice((page - 1) * limit, page * limit).map(serializeComment), page, limit, total: items.length, totalPages: Math.ceil(items.length / limit) });
     }
     if (req.method === "DELETE") {
-      if (user.id !== current.author.id && user.role !== "admin") return send({ message: "You cannot delete this comment" }, 403);
+      if (user.id !== current.author.id && !can(user, "comments.delete")) return send({ message: "You cannot delete this comment" }, 403);
       comments = comments.filter(item => item.id !== current.id && item.parentId !== current.id);
       return send(null, 204);
     }
@@ -510,7 +517,8 @@ createServer(async (req, res) => {
   }
   const adminStatus = /^\/admin\/blogs\/([^/]+)\/status$/.exec(path);
   if (adminStatus && req.method === "PATCH") {
-    const blog = blogs.find((item) => item.id === adminStatus[1]);
+    if (!can(user, "blogs.moderate")) return send({ message: "Insufficient permissions" }, 403);
+    const blog = blogs.find((item) => item.id === adminStatus[1] && !item.deletedAt);
     if (!blog) return send({ message: "Story not found" }, 404);
     if (!["draft", "published"].includes(data.status) || Object.keys(data).some((key) => key !== "status"))
       return send({ message: "Invalid status update" }, 400);
@@ -521,26 +529,56 @@ createServer(async (req, res) => {
     return send(serialize(blog, true));
   }
   if (path === "/admin/users" && req.method === "GET") {
+    if (!can(user, "users.manage")) return send({ message: "Insufficient permissions" }, 403);
     const q = (url.searchParams.get("q") || "").toLowerCase();
     const page = Number(url.searchParams.get("page") || 1);
     const limit = Number(url.searchParams.get("limit") || 10);
     const filtered = users.filter((account) => `${account.displayName} ${account.email}`.toLowerCase().includes(q));
     return send({ items: filtered.slice((page - 1) * limit, page * limit), page, limit, total: filtered.length, totalPages: Math.ceil(filtered.length / limit) });
   }
-  const userUpdate = /^\/admin\/users\/([^/]+)(?:\/status)?$/.exec(path);
+  const userUpdate = /^\/admin\/users\/([^/]+)(?:\/(status|permissions))?$/.exec(path);
   if (userUpdate && req.method === "PATCH") {
     const target = users.find((account) => account.id === userUpdate[1]);
     if (!target) return send({ message: "User not found" }, 404);
-    if (target.id === user.id && data.status === "disabled") return send({ message: "You cannot deactivate your own account" }, 403);
-    if (target.role === "admin" && target.status === "active" && (data.role === "author" || data.status === "disabled") && users.filter((account) => account.role === "admin" && account.status === "active").length <= 1)
-      return send({ message: "The last active admin must remain active and keep the admin role" }, 409);
-    if (data.role) target.role = data.role;
-    if (data.status) target.status = data.status;
+    if (target.role === "super_admin" || can(target, "users.grant_access")) return send({ message: "Protected account" }, 403);
+    if (userUpdate[2] === "status") {
+      if (!can(user, "users.manage") || (target.role === "admin" && user.role !== "super_admin")) return send({ message: "Insufficient permissions" }, 403);
+      target.status = data.status;
+    } else {
+      if (!can(user, "users.grant_access")) return send({ message: "Main admin required" }, 403);
+      if (data.role) { target.role = "admin"; target.permissions ||= []; }
+      if (data.permissions) target.permissions = data.permissions;
+    }
     if (target.status === "disabled") {
       for (const [key, account] of sessions) if (account.id === target.id) sessions.delete(key);
       for (const [key, account] of access) if (account.id === target.id) access.delete(key);
     }
     return send(target);
+  }
+  const trash = /^\/(me|admin)\/blog-trash(?:\/([^/]+))?(\/restore)?$/.exec(path);
+  if (trash) {
+    const admin = trash[1] === "admin";
+    if (admin && !can(user, "blogs.moderate")) return send({ message: "Insufficient permissions" }, 403);
+    const items = blogs.filter(blog => blog.deletedAt && (admin || blog.author.id === user.id));
+    const detail = blog => ({ ...serialize(blog, true), deletedAt: blog.deletedAt, deletedById: blog.deletedById, canRestore: admin ? can(user, "blogs.restore") : blog.deletedById === user.id, canPermanentlyDelete: admin ? can(user, "blogs.purge") : blog.author.id === user.id });
+    if (!trash[2]) {
+      const page = Number(url.searchParams.get("page") || 1), limit = Number(url.searchParams.get("limit") || 10);
+      return send({ items: items.slice((page - 1) * limit, page * limit).map(blog => { const value = detail(blog); delete value.content; return value; }), page, limit, total: items.length, totalPages: Math.ceil(items.length / limit) });
+    }
+    const blog = items.find(blog => blog.id === trash[2]);
+    if (!blog) return send({ message: "Trash item unavailable or state changed" }, 404);
+    if (req.method === "GET") return send(detail(blog));
+    if (req.method === "POST" && trash[3]) {
+      if (!detail(blog).canRestore) return send({ message: "An authorized admin must restore this story through Admin Trash" }, 403);
+      blog.deletedAt = null; blog.deletedById = null; blog.status = "draft"; blog.publishedAt = null;
+      return send(serialize(blog, true));
+    }
+    if (req.method === "DELETE" && !trash[3]) {
+      if (!detail(blog).canPermanentlyDelete) return send({ message: "Insufficient permission to permanently delete" }, 403);
+      blogs = blogs.filter(item => item.id !== blog.id);
+      comments = comments.filter(item => item.blogId !== blog.id);
+      return send(null, 204);
+    }
   }
   if (image) {
     if (data.coverImageUrl !== undefined) return send({ message: "Send either image or coverImageUrl, not both" }, 400);
@@ -559,8 +597,8 @@ createServer(async (req, res) => {
     if (id && !item) return send({ message: "Not found" }, 404);
     if (
       id &&
-      user.role !== "admin" &&
-      (req.method === "DELETE" || item.createdById !== user.id)
+      ((req.method === "DELETE" && !can(user, "taxonomy.delete")) ||
+        (req.method === "PATCH" && item.createdById !== user.id && !can(user, "taxonomy.manage")))
     )
       return send({ message: "Forbidden" }, 403);
     if (req.method === "POST") {
@@ -612,7 +650,8 @@ createServer(async (req, res) => {
     req.method === "GET"
   ) {
     const q = url.searchParams;
-    let items = blogs.filter((blog) =>
+    if (path === "/admin/blogs" && !can(user, "blogs.moderate")) return send({ message: "Insufficient permissions" }, 403);
+    let items = blogs.filter(blog => !blog.deletedAt).filter((blog) =>
       path === "/blogs"
         ? blog.status === "published"
         : path === "/me/blogs"
@@ -673,7 +712,7 @@ createServer(async (req, res) => {
   }
   const match = /^\/(blogs|me\/blogs|admin\/blogs)\/([^/]+)$/.exec(path);
   if (match) {
-    const blog = blogs.find((blog) =>
+    const blog = blogs.filter(blog => !blog.deletedAt).find((blog) =>
       req.method === "GET" && match[1] === "blogs"
         ? blog.slug === decodeURIComponent(match[2]) &&
           blog.status === "published"
@@ -681,11 +720,12 @@ createServer(async (req, res) => {
     );
     if (!blog) return send({ message: "Story not found" }, 404);
     if (match[1] !== "blogs" || req.method !== "GET")
-      if (user.role !== "admin" && blog.author.id !== user.id)
+      if (blog.author.id !== user.id && !can(user, req.method === "DELETE" ? "blogs.delete" : "blogs.moderate"))
         return send({ message: "Forbidden" }, 403);
     if (req.method === "GET") return send(serialize(blog, true));
     if (req.method === "DELETE") {
-      blogs = blogs.filter((value) => value.id !== blog.id);
+      blog.deletedAt = new Date().toISOString();
+      blog.deletedById = user.id;
       return send(undefined, 204);
     }
     if (req.method === "PATCH") {

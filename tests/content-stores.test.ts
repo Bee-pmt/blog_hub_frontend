@@ -188,7 +188,7 @@ describe("RTK Query content", () => {
     app.dispatch(sessionEnded());
     expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
   });
-  it("caches audit pages and immutable details, then refreshes history after a story mutation", async () => {
+  it("caches audit pages and details, then refreshes history after a story mutation", async () => {
     const app = store();
     await app.dispatch(blogApi.endpoints.getMyBlogAuditLogs.initiate(1)).unwrap();
     await app.dispatch(blogApi.endpoints.getMyBlogAuditLogs.initiate(1)).unwrap();
@@ -197,8 +197,8 @@ describe("RTK Query content", () => {
     expect(authenticatedRequest).toHaveBeenNthCalledWith(1, "/me/blog-audit-logs?page=1&limit=10", "GET", expect.anything());
     expect(authenticatedRequest).toHaveBeenNthCalledWith(2, "/me/blog-audit-logs/audit-record", "GET", expect.anything());
     await app.dispatch(blogApi.endpoints.deleteBlog.initiate("story-1")).unwrap();
-    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(3));
-    expect(authenticatedRequest).toHaveBeenLastCalledWith("/me/blog-audit-logs?page=1&limit=10", "GET", expect.anything());
+    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(4));
+    expect(authenticatedRequest).toHaveBeenLastCalledWith("/me/blog-audit-logs/audit-record", "GET", expect.anything());
   });
   it("shares concurrent list requests and reuses cached results", async () => {
     const app = store();
@@ -393,5 +393,42 @@ describe("public scrolling feed", () => {
     expect(blogApi.endpoints.getFeed.select({})(app.getState()).data?.pages).toHaveLength(1);
     await app.dispatch(blogApi.endpoints.getFeed.initiate({}, { direction: "forward" })).unwrap();
     expect(blogApi.endpoints.getFeed.select({})(app.getState()).data?.pages).toHaveLength(2);
+  });
+});
+
+describe("Blog Trash contracts", () => {
+  it("uses separate owner and admin lists and detail endpoints", async () => {
+    const app = store();
+    for (const admin of [false, true]) {
+      await app.dispatch(blogApi.endpoints.getBlogTrash.initiate({ admin, page: 2 })).unwrap();
+      await app.dispatch(blogApi.endpoints.getTrashedBlog.initiate({ admin, id: "trashed" })).unwrap();
+      expect(authenticatedRequest).toHaveBeenCalledWith(`${admin ? "/admin" : "/me"}/blog-trash?page=2&limit=10`, "GET", expect.anything());
+      expect(authenticatedRequest).toHaveBeenCalledWith(`${admin ? "/admin" : "/me"}/blog-trash/trashed`, "GET", expect.anything());
+    }
+  });
+  it("restores with an empty POST and permanently deletes only via Trash", async () => {
+    const app = store();
+    await app.dispatch(blogApi.endpoints.restoreBlog.initiate({ admin: false, id: "trashed" })).unwrap();
+    expect(contentRequest).toHaveBeenCalledWith("/me/blog-trash/trashed/restore", "POST", { body: undefined });
+    await app.dispatch(blogApi.endpoints.purgeBlog.initiate({ admin: true, id: "trashed" })).unwrap();
+    expect(contentRequest).toHaveBeenCalledWith("/admin/blog-trash/trashed", "DELETE", { body: undefined });
+  });
+  it.each([undefined, 404, 409])("refreshes normal and Trash lists after a mutation with status %s", async status => {
+    const app = store();
+    await app.dispatch(blogApi.endpoints.getManagedBlogs.initiate({ admin: false, page: 1, status: "" })).unwrap();
+    await app.dispatch(blogApi.endpoints.getBlogTrash.initiate({ admin: false, page: 1 })).unwrap();
+    vi.mocked(authenticatedRequest).mockClear();
+    if (status) vi.mocked(contentRequest).mockRejectedValueOnce(new ApiError("State changed", status));
+    await app.dispatch(blogApi.endpoints.restoreBlog.initiate({ admin: false, id: "trashed" }));
+    await vi.waitFor(() => expect(authenticatedRequest).toHaveBeenCalledTimes(2));
+  });
+  it("clears cached administrative results when the same account loses grants", async () => {
+    const app = store();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "admin", role: "admin", permissions: ["blogs.moderate"] });
+    await app.dispatch(restoreAuth()).unwrap();
+    await app.dispatch(blogApi.endpoints.getManagedBlogs.initiate({ admin: true, page: 1, status: "" })).unwrap();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ id: "admin", role: "admin", permissions: [] });
+    await app.dispatch(restoreAuth()).unwrap();
+    expect(Object.keys(app.getState().bloghubApi.queries)).toHaveLength(0);
   });
 });

@@ -1,4 +1,5 @@
 "use client";
+import { hasPermission } from "@/modules/auth/permissions";
 import type { ModuleNavItem } from "@/moduleTypes";
 import type { ReactNode } from "react";
 
@@ -13,9 +14,11 @@ import NotificationBell from "@/modules/notifications/components/notification-be
 export default function DashboardShell({
   children,
   navItems,
+  permission,
 }: {
   children: ReactNode;
   navItems: ModuleNavItem[];
+  permission?: string;
 }) {
   const { user, loading, error, restore, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
@@ -65,10 +68,10 @@ export default function DashboardShell({
         Taking you to sign in…
       </main>
     );
-  if (admin && user.role !== "admin")
+  if ((permission && !hasPermission(user, permission)) || (admin && !permission))
     return (
       <main id="main-content" className="site-container empty-state">
-        <h1>This workspace is for admins.</h1>
+        <h1>You do not have permission to open this workspace.</h1>
         <Link className="button button-secondary" href="/dashboard">
           Your posts
         </Link>
@@ -105,7 +108,7 @@ export default function DashboardShell({
         </div>
         <nav aria-label="Workspace navigation">
           {navItems
-            .filter((item) => !item.admin || user.role === "admin")
+            .filter((item) => item.permission ? hasPermission(user, item.permission) : !item.admin)
             .map((item) => (
               <Link
                 key={item.href}
@@ -125,7 +128,7 @@ export default function DashboardShell({
         </nav>
         <div className="account-details">
           <p>{user.email}</p>
-          <p>{user.role === "admin" ? "Administrator" : "Author"}</p>
+          <p>{user.role === "super_admin" ? "Super administrator" : user.role === "admin" ? "Administrator" : "Author"}</p>
         </div>
         <div className="workspace-signout">
           <button

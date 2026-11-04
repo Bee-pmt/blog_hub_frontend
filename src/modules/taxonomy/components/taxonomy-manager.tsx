@@ -1,4 +1,5 @@
 "use client";
+import { hasPermission } from "@/modules/auth/permissions";
 import type {
   Category,
   Tag,
@@ -19,7 +20,8 @@ import { useForm } from "react-hook-form";
 import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 export default function TaxonomyManager() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasPermission(user, "taxonomy.manage");
+  const canDelete = hasPermission(user, "taxonomy.delete");
   const {
     data,
     isLoading: loading,
@@ -43,11 +45,11 @@ export default function TaxonomyManager() {
   const editDialog = useRef<HTMLDialogElement>(null);
   const [deleting, setDeleting] = useState<TaxonomySelection | null>(null);
   const visibleTags = tags.filter(
-    (item) => isAdmin || item.createdById === user?.id,
+    (item) => isAdmin || canDelete || item.createdById === user?.id,
   );
   const visibleCategories = categories.filter(
     (item) =>
-      isAdmin ||
+      isAdmin || canDelete ||
       item.createdById === user?.id ||
       visibleTags.some((tag) => tag.categoryId === item.id),
   );
@@ -172,7 +174,7 @@ export default function TaxonomyManager() {
             </svg>
           </button>
         )}
-        {isAdmin && (
+        {canDelete && (
           <button
             className="button button-secondary taxonomy-icon-button"
             type="button"

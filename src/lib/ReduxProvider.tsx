@@ -4,6 +4,7 @@ import { Provider } from "react-redux";
 import { createAppStore } from "./store";
 import {
   restoreAuth,
+  refreshProfile,
   sessionEnded,
   setAuthChannel,
 } from "@/modules/auth/store/slices/authSlice";
@@ -27,7 +28,12 @@ export default function ReduxProvider({ children }: { children: ReactNode }) {
         }
         if (event.data === "login") void store.dispatch(restoreAuth());
       };
+    const refreshAccess = () => {
+      if (store.getState().auth.user) void store.dispatch(refreshProfile());
+    };
+    window.addEventListener("focus", refreshAccess);
     return () => {
+      window.removeEventListener("focus", refreshAccess);
       channel?.close();
       setAuthChannel(null);
       store.dispatch(sessionEnded());

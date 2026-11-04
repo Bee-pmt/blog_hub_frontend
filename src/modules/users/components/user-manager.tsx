@@ -1,263 +1,195 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { ManagedUser } from "@/modules/users/types";
+import type { ManagedUser } from "../types";
 import { dateLabel } from "@/lib/utils";
-import { errorMessage } from "@/lib/api-client";
-import {
-  useGetUsersQuery,
-  useUpdateUserMutation,
-} from "../store/services/userApi";
+import { useGetUsersQuery, useUpdateUserMutation } from "../store/services/userApi";
 import { queryError } from "@/lib/api/baseApi";
-import { useForm } from "react-hook-form";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
+import { assignablePermissions, hasPermission } from "@/modules/auth/permissions";
 import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 
-export default function UserManager() {
-  const { user, restore } = useAuth();
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const {
-    currentData: data,
-    isFetching: loading,
-    error: loadError,
-    refetch,
-  } = useGetUsersQuery({ q: query, page });
-  const [updateManagedUser] = useUpdateUserMutation();
-  const searchForm = useForm<{ q: string }>({ defaultValues: { q: "" } });
+function AccessForm({ account, onClose }: { account: ManagedUser; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [permissions, setPermissions] = useState<string[]>(
+    account.role === "author" ? [] : (account.permissions ?? []).filter(
+      value => assignablePermissions.some(option => option === value),
+    ),
+  );
+  const [update, { isLoading }] = useUpdateUserMutation();
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<{
-    account: ManagedUser;
-    change: { role: ManagedUser["role"] } | { status: ManagedUser["status"] };
-  } | null>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
 
-  if (data && !loading && page > Math.max(1, data.totalPages))
-    setPage(Math.max(1, data.totalPages));
-  async function save() {
-    if (!pending || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await updateManagedUser({
-        id: pending.account.id,
-        change: pending.change,
-      }).unwrap();
-      toast.success("Account updated.");
-      if (pending.account.id === user?.id) await restore();
-    } catch (failure) {
-      const message = errorMessage(failure);
-      setError(message);
-      toast.error(message);
-    } finally {
-      setBusy(false);
-      setPending(null);
-    }
-  }
+  return (
+    <dialog
+      ref={dialog}
+      className="confirm-dialog"
+      aria-label={`Access for ${account.displayName}`}
+      onCancel={event => { event.preventDefault(); if (!isLoading) onClose(); }}
+    >
+      <form className="stack" onSubmit={async event => {
+        event.preventDefault();
+        if (isLoading) return;
+        setError("");
+        try {
+          await update({
+            id: account.id,
+            change: account.role === "author" ? { role: "admin", permissions } : { permissions },
+          }).unwrap();
+          toast.success("Account access updated.");
+          onClose();
+        } catch (error) {
+          setError(queryError(error));
+        }
+      }}>
+        <h2>{account.role === "author" ? "Promote to admin" : "Edit permissions"}</h2>
+        <p>
+          {account.displayName} will have only the permissions selected below.
+          Clearing all permissions revokes administrative access.
+        </p>
+        <fieldset disabled={isLoading} className="stack">
+          <legend>Administrative permissions</legend>
+          {assignablePermissions.map(permission => (
+            <label key={permission} className="permission-option">
+              <input
+                type="checkbox"
+                checked={permissions.includes(permission)}
+                onChange={event => setPermissions(current => event.target.checked
+                  ? [...current, permission]
+                  : current.filter(value => value !== permission))}
+              />
+              {permission}
+            </label>
+          ))}
+        </fieldset>
+        {error && <p className="notice" role="alert">{error}</p>}
+        <div className="actions">
+          <button type="button" className="button button-secondary" disabled={isLoading} autoFocus onClick={onClose}>Cancel</button>
+          <button className="button button-primary" disabled={isLoading}>{isLoading ? "Saving…" : "Save access"}</button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+export default function UserManager() {
+  const { user } = useAuth();
+  const allowed = hasPermission(user, "users.manage");
+  const canGrant = hasPermission(user, "users.grant_access");
+  const [query, setQuery] = useState("");
+  const [input, setInput] = useState("");
+  const [page, setPage] = useState(1);
+  const { currentData: data, isFetching, error, refetch } = useGetUsersQuery({ q: query, page }, { skip: !allowed });
+  const [update, { isLoading }] = useUpdateUserMutation();
+  const [editing, setEditing] = useState<ManagedUser | null>(null);
+  const [pending, setPending] = useState<ManagedUser | null>(null);
+  const [failure, setFailure] = useState("");
+
+  if (data && !isFetching && page > Math.max(1, data.totalPages)) setPage(Math.max(1, data.totalPages));
+  if (!allowed) return <p role="alert">You do not have permission to manage users.</p>;
 
   return (
     <>
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Administration</p>
-          <h1>User management</h1>
-        </div>
-      </div>
+      <div className="section-heading"><h1>User management</h1></div>
       <p className="muted users-description">
-        Manage account access and roles. Deactivating an account signs it out
-        and preserves its stories.
+        Manage account access. Disabling an account signs it out and preserves its stories.
       </p>
-      <form
-        className="search-form user-search"
-        onSubmit={searchForm.handleSubmit(({ q }) => {
-          const search = q.trim();
-          setQuery(search);
-          setPage(1);
-          if (search === query && page === 1) void refetch();
-        })}
-      >
+      <form className="search-form user-search" onSubmit={event => {
+        event.preventDefault();
+        setQuery(input.trim());
+        setPage(1);
+        if (query === input.trim() && page === 1) void refetch();
+      }}>
         <label>
           Search users
-          <input
-            {...searchForm.register("q")}
-            className="form-control"
-            type="search"
-            maxLength={254}
-            placeholder="Name or email"
-            disabled={busy}
-          />
+          <input className="form-control" type="search" maxLength={254} value={input}
+            onChange={event => setInput(event.target.value)} placeholder="Name or email" />
         </label>
-        <button className="button button-primary" type="submit" disabled={busy}>
-          Search
-        </button>
-        <button
-          className="text-link"
-          type="reset"
-          disabled={busy}
-          onClick={() => {
-            searchForm.reset({ q: "" });
-            setError("");
-            setQuery("");
-            setPage(1);
-          }}
-        >
-          Clear
-        </button>
+        <button className="button button-primary">Search</button>
+        <button type="button" className="text-link" onClick={() => {
+          setInput(""); setQuery(""); setPage(1);
+        }}>Clear</button>
       </form>
-      {(error || loadError) && (
-        <div className="notice" role="alert">
-          {error || queryError(loadError)}{" "}
-          <button
-            className="text-link"
-            disabled={busy}
-            onClick={() => void refetch()}
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {loading ? (
-        <p className="loading-state" role="status">
-          Loading users…
+      {(failure || error) && (
+        <p className="notice" role="alert">
+          {failure || queryError(error)}{" "}
+          <button className="text-link" onClick={() => { setFailure(""); void refetch(); }}>Refresh users</button>
         </p>
-      ) : (
-        !error &&
-        !loadError &&
-        data && (
-          <>
-            <p className="result-count" role="status">
-              {data.total} {data.total === 1 ? "user" : "users"}
-              {query ? ` matching “${query}”` : ""} · 10 per page
-            </p>
-            {!data.items.length ? (
-              <div className="empty-state">
-                <h2>No users found.</h2>
-                <p>Try a different name or email.</p>
-              </div>
-            ) : (
-              <div className="table-scroll user-table-wrap">
-                <table className="user-table">
-                  <caption className="sr-only">
-                    Registered users and account controls
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Name & email</th>
-                      <th scope="col">Registered</th>
-                      <th scope="col">Role</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Account access</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.items.map((account) => (
+      )}
+      {isFetching ? <p role="status">Loading users…</p> : !error && data && (
+        <>
+          <p className="result-count">{data.total} {data.total === 1 ? "user" : "users"} · 10 per page</p>
+          {!data.items.length ? <div className="empty-state"><h2>No users found.</h2></div> : (
+            <div className="table-scroll user-table-wrap">
+              <table className="user-table">
+                <caption className="sr-only">Registered users and account controls</caption>
+                <thead><tr><th scope="col">Name & email</th><th scope="col">Registered</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Account access</th></tr></thead>
+                <tbody>
+                  {data.items.map(account => {
+                    const protectedAccount = account.role === "super_admin" || hasPermission(account, "users.grant_access");
+                    const canChangeStatus = !protectedAccount && account.id !== user?.id &&
+                      (account.role === "author" || user?.role === "super_admin");
+                    return (
                       <tr key={account.id}>
                         <th scope="row">
-                          <span className="user-name">
-                            {account.displayName}
-                            {account.id === user?.id ? " (you)" : ""}
-                          </span>
+                          <span className="user-name">{account.displayName}{account.id === user?.id ? " (you)" : ""}</span>
                           <span className="user-email">{account.email}</span>
                         </th>
                         <td>{dateLabel(account.createdAt)}</td>
+                        <td>{account.role.replaceAll("_", " ")}</td>
+                        <td><span className="badge">{account.status === "active" ? "Active" : "Inactive"}</span></td>
                         <td>
-                          <select
-                            className="form-control"
-                            aria-label={`Role for ${account.email}`}
-                            value={account.role}
-                            disabled={busy}
-                            onChange={(event) => {
-                              const role = event.target
-                                .value as ManagedUser["role"];
-                              if (role !== account.role)
-                                setPending({ account, change: { role } });
-                            }}
-                          >
-                            <option value="author">Author</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </td>
-                        <td>
-                          <span className="badge">
-                            {account.status === "active"
-                              ? "Active"
-                              : "Inactive"}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="button button-secondary"
-                            disabled={busy || account.id === user?.id}
-                            title={
-                              account.id === user?.id
-                                ? "You cannot deactivate your own account"
-                                : undefined
-                            }
-                            onClick={() =>
-                              setPending({
-                                account,
-                                change: {
-                                  status:
-                                    account.status === "active"
-                                      ? "disabled"
-                                      : "active",
-                                },
-                              })
-                            }
-                          >
-                            {account.status === "active"
-                              ? "Deactivate"
-                              : "Reactivate"}
-                          </button>
+                          <div className="actions">
+                            {canGrant && !protectedAccount && (
+                              <button className="text-link" disabled={isLoading} onClick={() => setEditing(account)}>
+                                {account.role === "author" ? "Promote to admin" : "Edit permissions"}
+                              </button>
+                            )}
+                            {canChangeStatus && (
+                              <button className="button button-secondary" disabled={isLoading} onClick={() => setPending(account)}>
+                                {account.status === "active" ? "Deactivate" : "Reactivate"}
+                              </button>
+                            )}
+                            {protectedAccount && <span className="muted">Protected account</span>}
+                          </div>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <nav className="pagination" aria-label="User pages">
-              <button
-                disabled={busy || page <= 1}
-                onClick={() => setPage((value) => value - 1)}
-              >
-                Previous
-              </button>
-              <span>
-                Page {page} of {Math.max(1, data.totalPages)}
-              </span>
-              <button
-                disabled={busy || page >= data.totalPages}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                Next
-              </button>
-            </nav>
-          </>
-        )
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <nav className="pagination" aria-label="User pages">
+            <button disabled={page <= 1 || isLoading} onClick={() => setPage(page - 1)}>Previous</button>
+            <span>Page {page} of {Math.max(1, data.totalPages)}</span>
+            <button disabled={page >= data.totalPages || isLoading} onClick={() => setPage(page + 1)}>Next</button>
+          </nav>
+        </>
       )}
+      {canGrant && editing && <AccessForm key={editing.id} account={editing} onClose={() => setEditing(null)} />}
       {pending && (
         <ConfirmDialog
+          title={pending.status === "active" ? "Deactivate account?" : "Reactivate account?"}
+          message={pending.status === "active"
+            ? `${pending.displayName} will be signed out. Their stories will be preserved.`
+            : `${pending.displayName} will be able to sign in again.`}
           confirmLabel="Save changes"
           busyLabel="Saving…"
-          title={
-            "role" in pending.change
-              ? "Change account role?"
-              : pending.change.status === "disabled"
-                ? "Deactivate account?"
-                : "Reactivate account?"
-          }
-          message={
-            "role" in pending.change
-              ? `Change ${pending.account.displayName} to ${pending.change.role}? Admins can manage all stories, taxonomy, and users.`
-              : pending.change.status === "disabled"
-                ? `${pending.account.displayName} will be signed out and unable to sign in. Their stories will be preserved.`
-                : `${pending.account.displayName} will be able to sign in again with their existing password.`
-          }
-          busy={busy}
+          busy={isLoading}
           onCancel={() => setPending(null)}
-          onConfirm={() => void save()}
+          onConfirm={async () => {
+            if (isLoading) return;
+            try {
+              await update({ id: pending.id, change: { status: pending.status === "active" ? "disabled" : "active" } }).unwrap();
+              toast.success("Account updated.");
+            } catch (error) {
+              setFailure(queryError(error));
+            } finally {
+              setPending(null);
+            }
+          }}
         />
       )}
     </>

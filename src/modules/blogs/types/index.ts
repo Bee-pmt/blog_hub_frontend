@@ -1,6 +1,7 @@
 import type { Category, Tag } from "@/modules/taxonomy/types";
 
 export type BlogSummary = {
+  version?: number;
   id: string;
   title: string;
   slug: string;
@@ -94,7 +95,7 @@ export type BlogAuditSummary = {
   blogTitle: string;
   actorId: string;
   postAuthorId: string;
-  action: "updated" | "published" | "unpublished" | "deleted";
+  action: string;
   createdAt: string;
 };
 
@@ -112,3 +113,13 @@ export type BlogAuditPage = {
   total: number;
   totalPages: number;
 };
+
+export type TrashedBlogSummary = BlogSummary & {
+  excerpt: string;
+  deletedAt: string;
+  deletedById: string | null;
+  canRestore: boolean;
+  canPermanentlyDelete: boolean;
+};
+export type TrashedBlog = Omit<TrashedBlogSummary, "excerpt"> & { content: string };
+export type BlogTrashPage = Omit<BlogPage, "items"> & { items: TrashedBlogSummary[] };

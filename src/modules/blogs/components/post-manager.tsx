@@ -1,4 +1,7 @@
 "use client";
+import { useAuth } from "@/modules/auth/hooks/useAuth";
+import { hasPermission } from "@/modules/auth/permissions";
+import BlogPreview from "./blog-preview";
 import type { BlogSummary as Blog } from "@/modules/blogs/types";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -16,6 +19,9 @@ import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 type PostManagerProps = { admin?: boolean };
 
 export default function PostManager({ admin = false }: PostManagerProps) {
+  const { user } = useAuth();
+  const allowed = !admin || hasPermission(user, "blogs.moderate");
+  const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [mutationError, setError] = useState("");
@@ -25,7 +31,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
     isFetching,
     error: loadError,
     refetch,
-  } = useGetManagedBlogsQuery({ admin, status, page });
+  } = useGetManagedBlogsQuery({ admin, status, page }, { skip: !allowed });
   const [changeStatus] = useChangeBlogStatusMutation();
   const [removeBlog] = useDeleteBlogMutation();
   const loading = isLoading || isFetching;
@@ -39,7 +45,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
     setBusy(post.id);
     setError("");
     try {
-      if (remove) await removeBlog(post.id).unwrap();
+      if (remove) await removeBlog({ id: post.id, version: post.version }).unwrap();
       else {
         await changeStatus({
           id: post.id,
@@ -49,7 +55,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
       }
       toast.success(
         remove
-          ? "Story deleted."
+          ? "Story moved to Trash."
           : post.status === "draft"
             ? "Your story is published."
             : "Story unpublished.",
@@ -63,6 +69,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
       setDeleting(null);
     }
   }
+  if (!allowed) return <p role="alert">You do not have permission to moderate stories.</p>;
   return (
     <>
       <div className="section-heading">
@@ -150,6 +157,7 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                       )}
                     </div>
                     <div className="row-actions">
+                      {admin && <button className="text-link" onClick={() => setSelected(post.id)}>Inspect</button>}
                       {!admin && (
                         <Link
                           className="text-link"
@@ -179,13 +187,13 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                             ? "Publish"
                             : "Unpublish"}
                       </button>
-                      <button
+                      {(post.author.id === user?.id || hasPermission(user, "blogs.delete")) && <button
                         className="text-link"
                         disabled={!!busy}
                         onClick={() => setDeleting(post)}
                       >
-                        Delete
-                      </button>
+                        Move to Trash
+                      </button>}
                     </div>
                   </article>
                 ))}
@@ -211,10 +219,11 @@ export default function PostManager({ admin = false }: PostManagerProps) {
           </>
         )
       )}
+      {selected && <BlogPreview id={selected} admin={admin} onClose={() => { setSelected(null); void refetch(); }} />}
       {deleting && (
         <ConfirmDialog
-          title="Delete this story?"
-          message={`“${deleting.title}” will be permanently removed. This cannot be undone.`}
+          title="Move this story to Trash?" confirmLabel="Move to Trash" busyLabel="Moving…"
+          message={`“${deleting.title}” will move to Trash. You can manage it from My Trash.`}
           busy={!!busy}
           onCancel={() => setDeleting(null)}
           onConfirm={() => void mutate(deleting, true)}

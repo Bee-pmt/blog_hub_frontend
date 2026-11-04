@@ -40,8 +40,8 @@ Comment opens the existing article's comments section. Only the signed-in author
 sees the two-dot menu: Edit opens the existing editor route; Delete confirms before
 removing; Unpublish returns the story to drafts. NestJS still checks ownership.
 
-The bottom Write blog bar opens the existing `PostEditor` in a full-screen panel
-that slides upward from the bottom without scrolling the feed. Its bundle is loaded on
+The bottom Write blog bar opens the existing `PostEditor` in a feed-width panel
+that slides upward from the bottom and stops below the header without scrolling the feed. Its bundle is loaded on
 demand. Visitors sign in first and return via `/?write=1#feed-editor`.
 
 The editor's optional `onSaved` callback keeps draft saves in the feed rather than

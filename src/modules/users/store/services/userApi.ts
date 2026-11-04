@@ -1,3 +1,4 @@
+import { refreshProfile } from "@/modules/auth/store/slices/authSlice";
 import { baseApi } from "@/lib/api/baseApi";
 import { queryString } from "@/lib/utils";
 import type { ManagedUser, UserPage } from "../../types";
@@ -14,15 +15,23 @@ export const userApi = baseApi.injectEndpoints({
       {
         id: string;
         change:
-          { role: ManagedUser["role"] } | { status: ManagedUser["status"] };
+          { role: "admin"; permissions?: string[] } | { permissions: string[] } | { status: ManagedUser["status"] };
       }
     >({
       query: ({ id, change }) => ({
-        route: `/admin/users/${encodeURIComponent(id)}${"role" in change ? "" : "/status"}`,
+        route: `/admin/users/${encodeURIComponent(id)}${"role" in change ? "" : "permissions" in change ? "/permissions" : "/status"}`,
         method: "PATCH",
         body: JSON.stringify(change),
         direct: true,
       }),
+      async onQueryStarted(_args, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          await dispatch(refreshProfile());
+        } catch {
+          // The form reports failures; forbidden requests also refresh the profile.
+        }
+      },
       invalidatesTags: (_result, error) => (error ? [] : ["User"]),
     }),
   }),

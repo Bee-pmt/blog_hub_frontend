@@ -210,6 +210,8 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
     } catch (failure) {
       setError(errorMessage(failure));
       toast.error(errorMessage(failure));
+      if (failure && typeof failure === "object" && "status" in failure && [404, 409].includes(Number(failure.status)))
+        setRevision(value => value + 1);
     } finally {
       saveRunning.current = false;
       setBusy(false);
@@ -554,7 +556,7 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
               disabled={busy || !!recovery}
               onClick={() => setDeleting(true)}
             >
-              Delete
+              Move to Trash
             </button>
           )}
           {post?.status === "published" && (
@@ -569,8 +571,8 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
       </div>
       {deleting && (
         <ConfirmDialog
-          title="Delete this story?"
-          message="This permanently removes the story and your browser recovery copy. This cannot be undone."
+          title="Move this story to Trash?" confirmLabel="Move to Trash" busyLabel="Moving…"
+          message="This moves the story to Trash and removes your browser recovery copy. Restore eligible stories from My Trash."
           busy={busy}
           onCancel={() => setDeleting(false)}
           onConfirm={async () => {
@@ -579,10 +581,10 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
             setBusy(true);
             setError("");
             try {
-              await deleteBlog(id).unwrap();
+              await deleteBlog({ id, version: post?.version }).unwrap();
               clearRecovery();
               allowLeave();
-              toast.success("Story deleted.");
+              toast.success("Story moved to Trash.");
               router.replace(admin ? "/dashboard/admin/posts" : "/dashboard");
             } catch (failure) {
               setError(errorMessage(failure));

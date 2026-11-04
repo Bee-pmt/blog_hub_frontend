@@ -93,3 +93,5 @@ Markdown skips raw HTML and filters link protocols. Image rendering accepts HTTP
 Create/save a draft, publish it, edit it, and find it on the public site. Test visual/source/preview switching, taxonomy selection, cover upload, failed saves, recovery after reload, and delete cancellation. As an administrator, moderate another user's story; verify the author's publishing restriction and notification. Open activity details and confirm the changed values/snapshot. Test private data isolation after signing out and switching accounts.
 
 Related: [Website](website.md), [Taxonomy](taxonomy.md), [Notifications](notifications.md), [Authentication](auth.md).
+
+The permission-based moderation and recoverable deletion behavior is documented in [Permissions and Trash](permissions-and-trash.md). Ordinary post deletion now moves to Trash; permanent deletion uses the separate Trash API and confirmation.

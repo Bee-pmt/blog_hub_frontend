@@ -73,7 +73,7 @@ function ActivityDetails({ id, onClose }: { id: string; onClose: () => void }) {
           <>
             <h3>{data.blogTitle}</h3>
             <p>
-              <span className="badge">{data.action}</span> ·{" "}
+              <span className="badge">{data.action.replaceAll("_", " ")}</span> ·{" "}
               <time dateTime={data.createdAt}>
                 {new Date(data.createdAt).toLocaleString()}
               </time>
@@ -95,8 +95,8 @@ function ActivityDetails({ id, onClose }: { id: string; onClose: () => void }) {
             ))}
             {data.snapshot && (
               <section className="activity-change">
-                <h3>Deleted story</h3>
-                <p>This copy shows the story just before it was deleted.</p>
+                <h3>Historical story snapshot</h3>
+                <p>This copy shows the story at the time of this action.</p>
                 <dl className="activity-metadata">
                   <dt>Title</dt>
                   <dd>{data.snapshot.title}</dd>
@@ -194,7 +194,7 @@ export default function BlogActivity() {
                 {data.items.map((log) => (
                   <article className="manage-row" key={log.id}>
                     <div>
-                      <span className="badge">{log.action}</span>
+                      <span className="badge">{log.action.replaceAll("_", " ")}</span>
                       <h2>{log.blogTitle}</h2>
                       <p className="muted">
                         <time

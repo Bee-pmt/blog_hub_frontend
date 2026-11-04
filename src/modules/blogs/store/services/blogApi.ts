@@ -8,12 +8,14 @@ import type {
   BlogAuditLog,
   BlogAuditPage,
   Filters,
+  BlogTrashPage,
+  TrashedBlog,
 } from "../../types";
 import { saveBlog } from "../../api";
 import { ApiError, errorMessage } from "@/lib/api-client";
 import { contentRequest } from "@/lib/content-client";
 import { clearSession } from "@/lib/session";
-import { sessionEnded } from "@/modules/auth/store/slices/authSlice";
+import { refreshProfile, sessionEnded } from "@/modules/auth/store/slices/authSlice";
 
 export const blogApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -38,6 +40,23 @@ export const blogApi = baseApi.injectEndpoints({
       query: (id) => ({
         route: `/me/blog-audit-logs/${encodeURIComponent(id)}`,
       }),
+      providesTags: ["BlogAudit"],
+    }),
+    getBlogTrash: builder.query<BlogTrashPage, { admin: boolean; page: number }>({
+      query: ({ admin, page }) => ({ route: `${admin ? "/admin" : "/me"}/blog-trash?page=${page}&limit=10` }),
+      providesTags: ["BlogTrash"],
+    }),
+    getTrashedBlog: builder.query<TrashedBlog, { admin: boolean; id: string }>({
+      query: ({ admin, id }) => ({ route: `${admin ? "/admin" : "/me"}/blog-trash/${encodeURIComponent(id)}` }),
+      providesTags: ["BlogTrash"],
+    }),
+    restoreBlog: builder.mutation<Blog, { admin: boolean; id: string }>({
+      query: ({ admin, id }) => ({ route: `${admin ? "/admin" : "/me"}/blog-trash/${encodeURIComponent(id)}/restore`, method: "POST" }),
+      invalidatesTags: (_result, error) => !error || [404, 409].includes(error.status) ? ["Blog", "BlogAudit", "BlogTrash", "Comment", "Reaction", "Notification"] : [],
+    }),
+    purgeBlog: builder.mutation<null, { admin: boolean; id: string }>({
+      query: ({ admin, id }) => ({ route: `${admin ? "/admin" : "/me"}/blog-trash/${encodeURIComponent(id)}`, method: "DELETE" }),
+      invalidatesTags: (_result, error) => !error || [404, 409].includes(error.status) ? ["Blog", "BlogAudit", "BlogTrash", "Comment", "Reaction", "Notification"] : [],
     }),
     getManagedBlogs: builder.query<
       BlogPage,
@@ -68,10 +87,11 @@ export const blogApi = baseApi.injectEndpoints({
             clearSession();
             api.dispatch(sessionEnded());
           }
+          if (status === 403 && (api.getState() as RootState).auth === session) void api.dispatch(refreshProfile());
           return { error: { status, message: errorMessage(failure) } };
         }
       },
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
+      invalidatesTags: (_result, error) => (!error || [404, 409].includes(error.status) ? ["Blog", "BlogAudit", "BlogTrash", "Comment", "Reaction", "Notification"] : []),
     }),
     changeBlogStatus: builder.mutation<
       Blog,
@@ -84,14 +104,14 @@ export const blogApi = baseApi.injectEndpoints({
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
+      invalidatesTags: (_result, error) => (!error || [404, 409].includes(error.status) ? ["Blog", "BlogAudit", "BlogTrash", "Comment", "Reaction", "Notification"] : []),
     }),
-    deleteBlog: builder.mutation<null, string>({
-      query: (id) => ({
-        route: `/blogs/${encodeURIComponent(id)}`,
+    deleteBlog: builder.mutation<null, string | { id: string; version?: number }>({
+      query: (post) => ({
+        route: typeof post === "string" ? `/blogs/${encodeURIComponent(post)}` : `/blogs/${encodeURIComponent(post.id)}${queryString({ version: post.version })}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_result, error) => (error ? [] : ["Blog", "BlogAudit"]),
+      invalidatesTags: (_result, error) => (!error || [404, 409].includes(error.status) ? ["Blog", "BlogAudit", "BlogTrash", "Comment", "Reaction", "Notification"] : []),
     }),
   }),
 });
@@ -101,6 +121,11 @@ export const {
   useGetMyBlogAuditLogQuery,
   useGetManagedBlogsQuery,
   useLazyGetEditableBlogQuery,
+  useGetEditableBlogQuery,
+  useGetBlogTrashQuery,
+  useGetTrashedBlogQuery,
+  useRestoreBlogMutation,
+  usePurgeBlogMutation,
   useSaveBlogMutation,
   useChangeBlogStatusMutation,
   useDeleteBlogMutation,

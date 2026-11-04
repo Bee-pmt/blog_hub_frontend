@@ -2177,10 +2177,10 @@ body:has(.feed-page) .site-header { background: color-mix(in srgb, var(--feed-ba
 .feed-composer { position: fixed; bottom: max(1rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 8; width: min(760px, calc(100% - 2rem)); display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem; background: var(--subtle); border: 1px solid var(--border); border-radius: 1.15rem; box-shadow: 0 4px 24px #0002; }
 .feed-composer > button, .feed-composer > a { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: space-between; text-align: left; border-radius: 2rem; padding: 0.75rem 1.1rem; background: var(--surface); color: var(--foreground); font-size: 0.95rem; }
 body:has(.feed-editor[open]) { overflow: hidden; }
-.feed-editor { position: fixed; inset: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: clamp(1rem, 3vw, 2rem); border: 0; border-radius: 0; overflow-y: auto; background: var(--feed-blue); color: var(--feed-ink); --surface: var(--feed-blue); }
+.feed-editor { position: fixed; inset: var(--editor-top, 96px) 0 0; width: var(--editor-width, 850px); max-width: 100%; height: calc(100dvh - var(--editor-top, 96px)); max-height: none; margin: 0 auto; padding: clamp(1rem, 3vw, 2rem); border: 0; border-radius: 0; overflow-y: auto; background: var(--feed-blue); color: var(--feed-ink); --surface: var(--feed-blue); }
 .feed-editor[open] { animation: feed-editor-open 280ms ease-out; }
 .feed-editor-content { max-width: 850px; margin-inline: auto; }
-.feed-editor::backdrop { background: #0003; }
+.feed-editor::backdrop { background: transparent; }
 @keyframes feed-editor-open { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .feed-editor[open] { animation: none; } }
 .feed-editor-close { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 1rem; }
@@ -2195,3 +2195,6 @@ body:has(.feed-editor[open]) { overflow: hidden; }
   .feed-posts { scroll-margin-top: 10rem; }
   body:has(.feed-page) .faq-trigger { bottom: max(7rem, env(safe-area-inset-bottom)); }
 }
+
+.permission-option { display: flex; align-items: center; gap: 0.75rem; }
+.permission-option input { width: 1rem; height: 1rem; flex-shrink: 0; }

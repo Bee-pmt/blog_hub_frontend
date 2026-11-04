@@ -306,7 +306,7 @@ test("author taxonomy permissions and blocked admin route", async ({
   await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toHaveCount(0);
   await page.goto("/dashboard/admin/posts");
   await expect(
-    page.getByRole("heading", { name: "This workspace is for admins." }),
+    page.getByRole("heading", { name: "You do not have permission to open this workspace." }),
   ).toBeVisible();
 });
 test("author without categories can create a tag under an existing category", async ({ page, request }) => {
@@ -341,7 +341,7 @@ test("admin moderates another author and deletes a category without deleting sto
   const otherStory = page.locator(".manage-row").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
   await expect(otherStory.getByRole("link", { name: "Read", exact: true })).toBeVisible();
   await expect(otherStory.getByRole("button", { name: "Unpublish", exact: true })).toBeVisible();
-  await expect(otherStory.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+  await expect(otherStory.getByRole("button", { name: "Move to Trash", exact: true })).toBeVisible();
   await page.goto("/dashboard/taxonomy");
   await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
   const adminIdeasToggle = page.getByRole("button", { name: "Tags for Ideas", exact: true });
@@ -619,12 +619,19 @@ test("admin user management searches, paginates, confirms role changes and manag
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(table.locator("tbody tr")).toHaveCount(1);
   await expect(page.getByRole("navigation", { name: "User pages" }).getByText("Page 1 of 1", { exact: true })).toBeVisible();
-  await page.getByLabel("Role for author@test.local").selectOption("admin");
+  await page.getByRole("button", { name: "Promote to admin", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "blogs.delete", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "blogs.restore", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "blogs.purge", exact: true })).not.toBeChecked();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByLabel("Role for author@test.local")).toHaveValue("author");
-  await page.getByLabel("Role for author@test.local").selectOption("admin");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByLabel("Role for author@test.local")).toHaveValue("admin");
+  await page.getByRole("button", { name: "Promote to admin", exact: true }).click();
+  await page.getByRole("checkbox", { name: "blogs.moderate", exact: true }).check();
+  await page.getByRole("button", { name: "Save access", exact: true }).click();
+  await expect(table.getByRole("button", { name: "Edit permissions", exact: true })).toBeVisible();
+  await table.getByRole("button", { name: "Edit permissions", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "blogs.moderate", exact: true })).toBeChecked();
+  await page.getByRole("checkbox", { name: "blogs.moderate", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Save access", exact: true }).click();
   await page.getByRole("button", { name: "Deactivate", exact: true }).click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(table.getByText("Inactive", { exact: true })).toBeVisible();
@@ -637,7 +644,8 @@ test("admin user management searches, paginates, confirms role changes and manag
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(table.locator("tbody tr")).toHaveCount(10);
   const self = table.getByRole("row").filter({ hasText: "admin@test.local" });
-  await expect(self.getByRole("button", { name: "Deactivate" })).toBeDisabled();
+  await expect(self.getByRole("button")).toHaveCount(0);
+  await expect(self.getByText("Protected account")).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("admin-users.png"), fullPage: true });
 });
 
@@ -645,7 +653,7 @@ test("authors cannot access user management", async ({ page }) => {
   await login(page);
   await expect(page.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
   await page.goto("/dashboard/admin/users");
-  await expect(page.getByRole("heading", { name: "This workspace is for admins." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "You do not have permission to open this workspace." })).toBeVisible();
   await expect(page.locator(".user-table:visible")).toHaveCount(0);
 });
 
@@ -2072,12 +2080,12 @@ test("feed owns post menus and refreshes all loaded pages after unpublishing and
   await expect(page.getByRole("heading", { name: "Thoughtful story 12", exact: true })).toBeVisible();
   const next = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 3", exact: true }) });
   await next.locator("summary").click();
-  await next.getByRole("button", { name: "Delete", exact: true }).click();
+  await next.getByRole("button", { name: "Move to Trash", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(next).toBeVisible();
   await next.locator("summary").click();
-  await next.getByRole("button", { name: "Delete", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await next.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
   await expect(page.locator(".feed-card:visible")).toHaveCount(10);
   await expect(page.getByText("10 stories", { exact: true })).toBeVisible();
   await page.reload();
@@ -2093,8 +2101,18 @@ test("feed opens the existing editor upward and preserves draft and leave protec
   await expect(editor.getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
   expect(new URL(page.url()).pathname).toBe("/");
   await expect(editor).toHaveCSS("animation-name", "feed-editor-open");
-  const bounds = await editor.boundingBox();
-  expect(bounds!.height).toBeGreaterThanOrEqual((await page.evaluate(() => innerHeight)) - 160);
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(async () => {
+      const panel = await editor.boundingBox();
+      const header = await page.locator(".site-header").boundingBox();
+      return Math.abs(panel!.y - header!.y - header!.height);
+    }).toBeLessThan(2);
+    const panel = await editor.boundingBox();
+    const feed = await page.locator(".feed-page").boundingBox();
+    expect(Math.abs(panel!.width - feed!.width)).toBeLessThan(2);
+    expect(Math.abs(panel!.x - feed!.x)).toBeLessThan(2);
+  }
   await editor.getByLabel("Story title", { exact: true }).fill("An inline story");
   await editor.getByRole("combobox", { name: "Category", exact: true }).selectOption("cat-1");
   await editor.getByRole("button", { name: "Markdown source", exact: true }).click();
@@ -2152,4 +2170,112 @@ test("feed keeps loaded cards on scroll errors and fits mobile and desktop theme
   await page.getByRole("switch", { name: "Dark mode" }).click();
   await page.setViewportSize({ width: 390, height: 900 });
   await page.screenshot({ path: test.info().outputPath("feed-mobile-dark.png") });
+});
+
+test("owner Trash restores drafts with the same identity and separately confirms permanent deletion", async ({ page }) => {
+  await login(page);
+  await page.goto("/dashboard");
+  const story = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 1", exact: true }) });
+  await story.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("will move to Trash");
+  await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await expect(story).toHaveCount(0);
+  await page.getByRole("link", { name: "My Trash", exact: true }).click();
+  let trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`trash-${width}.png`), fullPage: true });
+  }
+  await trashed.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Story preview" })).toContainText("A fresh perspective");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await trashed.getByRole("button", { name: "Restore", exact: true }).click();
+  const open = page.getByRole("link", { name: "Open draft editor", exact: true });
+  await expect(open).toHaveAttribute("href", "/dashboard/posts/story-1/edit");
+  await open.click();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.locator("a:visible").filter({ hasText: /^My Trash$/ }).click();
+  trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
+  await trashed.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("comments, replies, reactions");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(trashed).toBeVisible();
+  await trashed.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Trash is empty." })).toBeVisible();
+});
+
+test("restricted admins see only granted controls and refresh revoked access without retrying writes", async ({ page, request }) => {
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate", "users.manage"] } });
+  await login(page);
+  await expect(page.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
+  await page.goto("/dashboard/admin/posts");
+  const other = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
+  await expect(other.getByRole("button", { name: "Inspect", exact: true })).toBeVisible();
+  await expect(other.getByRole("button", { name: "Move to Trash", exact: true })).toHaveCount(0);
+  await expect(other.getByRole("link", { name: "Edit", exact: true })).toHaveCount(0);
+  await page.goto("/dashboard/admin/users");
+  await expect(page.getByRole("button", { name: "Promote to admin", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Edit permissions", exact: true })).toHaveCount(0);
+  const main = page.getByRole("row").filter({ hasText: "admin@test.local" });
+  await expect(main.getByRole("button")).toHaveCount(0);
+  await page.goto("/dashboard/admin/posts");
+  await expect(other.getByRole("button", { name: "Unpublish", exact: true })).toBeVisible();
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: [] } });
+  await other.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "You do not have permission to open this workspace.", exact: true })).toBeVisible();
+  const requests = await (await request.get(`${api}/__requests`)).json();
+  expect(requests.filter((item: { path: string; method: string }) => item.path === "/api/v1/admin/blogs/story-2/status" && item.method === "PATCH")).toHaveLength(1);
+});
+
+test("admin-trashed stories require admin restore and keep publication restrictions", async ({ page, browser, request }) => {
+  await login(page, "admin@test.local");
+  await page.goto("/dashboard/admin/posts");
+  let post = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 1", exact: true }) });
+  await post.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(post.getByRole("button", { name: "Publish", exact: true })).toBeVisible();
+  await post.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await page.getByRole("link", { name: "Admin Trash", exact: true }).click();
+  post = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
+  await expect(post.getByRole("button", { name: "Restore", exact: true })).toBeVisible();
+  const context = await browser.newContext();
+  try {
+    const author = await context.newPage();
+    await login(author);
+    await author.getByRole("link", { name: "My Trash", exact: true }).click();
+    const ownerPost = author.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
+    await expect(ownerPost).toContainText("an authorized administrator must restore");
+    await expect(ownerPost.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0);
+    await expect(ownerPost.getByRole("button", { name: "Delete permanently", exact: true })).toBeVisible();
+    await post.getByRole("button", { name: "Restore", exact: true }).click();
+    await expect(post).toHaveCount(0);
+    await author.goto("/dashboard/posts/story-1/edit");
+    await expect(author.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    await expect(author.getByLabel("Story title", { exact: true })).toHaveValue("Thoughtful story 1");
+  } finally { await context.close(); }
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate"] } });
+});
+
+
+test("Admin Trash does not infer restore or purge authority from the delete grant", async ({ page, request }) => {
+  await login(page, "admin@test.local");
+  await page.goto("/dashboard/admin/posts");
+  const story = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
+  await story.getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
+  await expect(story).toHaveCount(0);
+  await page.context().clearCookies();
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate", "blogs.delete"] } });
+  await page.goto("/login");
+  await login(page);
+  await page.getByRole("link", { name: "Admin Trash", exact: true }).click();
+  const trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 2" });
+  await expect(trashed.getByRole("button", { name: "Preview", exact: true })).toBeVisible();
+  await expect(trashed.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0);
+  await expect(trashed.getByRole("button", { name: "Delete permanently", exact: true })).toHaveCount(0);
 });

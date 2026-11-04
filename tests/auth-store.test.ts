@@ -3,6 +3,7 @@ import { createAppStore } from "@/lib/store";
 import {
   loginAuth,
   restoreAuth,
+  refreshProfile,
   logoutAuth,
   sessionEnded,
   changePasswordAuth,
@@ -162,5 +163,33 @@ describe("Redux authentication", () => {
       .unwrap();
     expect(clearSessionAction).toHaveBeenCalledOnce();
     expect(store.getState().auth.user).toBeNull();
+  });
+});
+
+
+describe("permission profile refresh", () => {
+  it("refreshes grants without setting workspace loading or refreshing the token again", async () => {
+    const store = createAppStore();
+    await store.dispatch(restoreAuth()).unwrap();
+    vi.mocked(refreshSession).mockClear();
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ ...user, permissions: ["blogs.moderate"] });
+    const pending = store.dispatch(refreshProfile());
+    expect(store.getState().auth.loading).toBe(false);
+    await pending.unwrap();
+    expect(store.getState().auth.user?.permissions).toEqual(["blogs.moderate"]);
+    expect(refreshSession).not.toHaveBeenCalled();
+  });
+  it("ignores an old profile response after logging in again as the same account", async () => {
+    const store = createAppStore();
+    await store.dispatch(restoreAuth()).unwrap();
+    let finish!: (value: unknown) => void;
+    vi.mocked(authenticatedRequest).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = store.dispatch(refreshProfile());
+    store.dispatch(sessionEnded());
+    vi.mocked(authenticatedRequest).mockResolvedValueOnce({ ...user, permissions: [] });
+    await store.dispatch(restoreAuth()).unwrap();
+    finish({ ...user, permissions: ["users.grant_access"] });
+    await pending.unwrap();
+    expect(store.getState().auth.user?.permissions).toEqual([]);
   });
 });

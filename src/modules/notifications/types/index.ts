@@ -1,7 +1,7 @@
 export type Notification = {
   id: string;
   userId: string;
-  type: "post_unpublished" | "post_deleted";
+  type: string;
   blogId: string;
   blogTitle: string;
   message: string;

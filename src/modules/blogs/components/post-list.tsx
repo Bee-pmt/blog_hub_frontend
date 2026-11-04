@@ -35,9 +35,9 @@ function FeedPost({ post }: { post: BlogSummary }) {
     setError("");
     if (menu.current) menu.current.open = false;
     try {
-      if (remove) await deletePost(post.id).unwrap();
+      if (remove) await deletePost({ id: post.id, version: post.version }).unwrap();
       else await changeStatus({ id: post.id, status: "draft", admin: false }).unwrap();
-      toast.success(remove ? "Story deleted." : "Story unpublished.");
+      toast.success(remove ? "Story moved to Trash." : "Story unpublished.");
     } catch (failure) {
       setError(queryError(failure));
     } finally {
@@ -67,7 +67,7 @@ function FeedPost({ post }: { post: BlogSummary }) {
             <div className="feed-menu-items">
               <Link href={`/dashboard/posts/${post.id}/edit`}>Edit</Link>
               <button disabled={busy} onClick={() => void mutate(false)}>Unpublish</button>
-              <button disabled={busy} onClick={() => { if (menu.current) menu.current.open = false; setDeleting(true); }}>Delete</button>
+              <button disabled={busy} onClick={() => { if (menu.current) menu.current.open = false; setDeleting(true); }}>Move to Trash</button>
             </div>
           </details>
         )}
@@ -81,7 +81,7 @@ function FeedPost({ post }: { post: BlogSummary }) {
       {post.coverImageUrl && <Link href={href} tabIndex={-1} aria-hidden="true"><BlogImage src={post.coverImageUrl} className="card-cover" /></Link>}
       <ReactionButtons kind="blogs" id={post.id} commentHref={`${href}#comments`} />
       {error && <p className="notice" role="alert">{error}</p>}
-      {deleting && <ConfirmDialog title="Delete this story?" message={`“${post.title}” will be permanently removed. This cannot be undone.`}
+      {deleting && <ConfirmDialog title="Move this story to Trash?" confirmLabel="Move to Trash" busyLabel="Moving…" message={`“${post.title}” will move to Trash. You can manage it from My Trash.`}
         busy={busy} onCancel={() => setDeleting(false)} onConfirm={() => void mutate(true)} />}
     </article>
   );
@@ -116,7 +116,21 @@ export default function PostList({ data: initial, filters, startWriting = false 
   }, [initial, filters, store]);
 
   useEffect(() => {
-    if (editor && userId && !editorSection.current?.open) editorSection.current?.showModal();
+    const panel = editorSection.current;
+    if (!editor || !userId || !panel) return;
+    const header = document.querySelector(".site-header");
+    const feedPage = panel.closest(".feed-page");
+    if (!header || !feedPage) return;
+    const fitPanel = () => {
+      panel.style.setProperty("--editor-top", `${header.getBoundingClientRect().bottom}px`);
+      panel.style.setProperty("--editor-width", `${feedPage.getBoundingClientRect().width}px`);
+    };
+    fitPanel();
+    if (!panel.open) panel.showModal();
+    const observer = new ResizeObserver(fitPanel);
+    observer.observe(header);
+    observer.observe(feedPage);
+    return () => observer.disconnect();
   }, [editor, userId]);
 
   useEffect(() => {

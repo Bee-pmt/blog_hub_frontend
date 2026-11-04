@@ -13,7 +13,8 @@ export function createAppStore() {
     predicate: (_action, current, previous) => {
       const next = (current as RootState).auth.user;
       const old = (previous as RootState).auth.user;
-      return next?.id !== old?.id || next?.role !== old?.role;
+      return next?.id !== old?.id || next?.role !== old?.role ||
+        JSON.stringify(next?.permissions ?? []) !== JSON.stringify(old?.permissions ?? []);
     },
     effect: (_action, api) => {
       api.dispatch(baseApi.util.resetApiState());

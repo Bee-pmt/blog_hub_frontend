@@ -108,11 +108,13 @@ export default function NotificationsPage() {
                         strokeLinecap="round"
                         aria-hidden="true"
                       >
-                        {item.type === "post_deleted" ? (
+                        {["post_deleted", "post_permanently_deleted"].includes(item.type) ? (
                           <path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7" />
-                        ) : (
+                        ) : item.type === "post_restored" ? (
+                          <path d="M3 10a9 9 0 1 1 2 9M3 4v6h6" />
+                        ) : item.type === "post_unpublished" ? (
                           <path d="m5 5 14 14M19 5 5 19" />
-                        )}
+                        ) : <path d="M12 8h.01M12 11v6M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0" />}
                       </svg>
                     </span>
                   </span>
@@ -125,7 +127,7 @@ export default function NotificationsPage() {
                       {relativeTime(item.createdAt, now)}
                     </time>
                     <div className="notification-actions">
-                      {item.type === "post_unpublished" && (
+                      {["post_unpublished", "post_restored"].includes(item.type) && (
                         <Link
                           className="text-link"
                           href={`/dashboard/posts/${encodeURIComponent(item.blogId)}/edit`}
@@ -133,6 +135,7 @@ export default function NotificationsPage() {
                           Edit story
                         </Link>
                       )}
+                      {item.type === "post_deleted" && <Link className="text-link" href="/dashboard/trash">Open My Trash</Link>}
                       {!item.readAt && (
                         <button
                           className="text-link"
