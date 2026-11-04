@@ -2,6 +2,28 @@ import { test, expect, Page } from "@playwright/test";
 import type { ChatMessage } from "@/modules/chat/types";
 import { encode } from "next-auth/jwt";
 const api = "http://localhost:5301/api/v1";
+async function openSidebar(page: Page) {
+  const sidebar = page.getByRole("dialog", { name: "Sidebar", exact: true });
+  if (!await sidebar.isVisible()) await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
+  await expect(sidebar).toBeVisible();
+  await expect(sidebar).toHaveCSS("transform", "none");
+  return sidebar;
+}
+async function clickWorkspaceLink(page: Page, name: string | RegExp) {
+  const sidebar = await openSidebar(page);
+  await sidebar.getByRole("link", { name, exact: true }).click();
+  await expect(sidebar).not.toBeVisible();
+}
+async function signOut(page: Page) {
+  const sidebar = await openSidebar(page);
+  await sidebar.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(sidebar).not.toBeVisible();
+}
+async function expectUnreadCount(page: Page, count: string) {
+  const sidebar = await openSidebar(page);
+  await expect(sidebar.locator(".chat-unread-count")).toHaveText(count);
+  await sidebar.getByRole("button", { name: "Close sidebar", exact: true }).click();
+}
 async function googleHandoff(page: Page, idToken: string, mode = "login") {
   const token = await encode({ secret: "playwright-only-google-oauth-secret-32-bytes", salt: "bloghub_google", maxAge: 600, token: { googleIdToken: idToken, googleExpiresAt: Date.now() + 600_000 } });
   await page.context().addCookies([
@@ -23,9 +45,11 @@ test("new Google users set a password before creation and can later use password
   await page.getByLabel("Confirm password", { exact: true }).fill("password123");
   await page.getByRole("button", { name: "Create account and sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await openSidebar(page);
   await expect(page.getByRole("heading", { name: "Google Writer", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   expect((await page.context().cookies()).some(cookie => cookie.name === "bloghub_google")).toBe(false);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "google-new@test.local");
 });
@@ -38,7 +62,7 @@ test("existing users confirm their password once and later Google sign-ins need 
   await page.getByLabel("Current BlogHub password").fill("password123");
   await page.getByRole("button", { name: "Confirm password and link Google" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await googleHandoff(page, "google-author");
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
@@ -144,13 +168,15 @@ test("register, sign in, reload session and sign out", async ({ page }) => {
   const refreshCookie = (await page.context().cookies()).find((cookie) => cookie.name === "bloghub_refresh");
   expect(refreshCookie).toMatchObject({ httpOnly: true, path: "/", sameSite: "Lax" });
   await expect(page.getByRole("link", { name: "Profile", exact: true })).toHaveText("N");
-  await expect(page.locator(".site-header").getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Sidebar", exact: true })).not.toBeVisible();
+  await openSidebar(page);
   await expect(page.locator(".dashboard-sidebar").getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
   await page.reload();
+  await openSidebar(page);
   await expect(
     page.getByRole("heading", { name: "New Writer", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login\?returnTo=/);
   const signOutToast = page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Signed out successfully." });
   await expect(signOutToast).toBeVisible();
@@ -163,7 +189,7 @@ test("create draft, reopen unchanged Markdown, publish and unpublish", async ({
   page,
 }) => {
   await login(page);
-  await page.getByRole("link", { name: "Write a story", exact: true }).click();
+  await clickWorkspaceLink(page, "Write a story");
   await page.getByLabel("Story title", { exact: true }).fill("A new chapter");
   await page
     .getByRole("combobox", { name: "Category", exact: true })
@@ -556,8 +582,10 @@ test("settings changes passwords, preserves incorrect-password sessions, and sig
   await login(page);
   const otherTab = await context.newPage();
   await otherTab.goto("/dashboard");
+  await openSidebar(otherTab);
   await expect(otherTab.getByRole("link", { name: "Account settings" })).toBeVisible();
-  await page.getByRole("link", { name: "Account settings" }).click();
+  await otherTab.getByRole("button", { name: "Close sidebar", exact: true }).click();
+  await clickWorkspaceLink(page, "Account settings");
   await expect(page).toHaveURL(/\/settings$/);
   await page.screenshot({ path: test.info().outputPath("password-settings.png"), fullPage: true });
   await page.getByLabel("Current password", { exact: true }).fill("wrongpassword");
@@ -606,7 +634,7 @@ test("forgot password verifies the emailed code and accepts the new password", a
 
 test("admin user management searches, paginates, confirms role changes and manages access", async ({ page }) => {
   await login(page, "admin@test.local");
-  await page.getByRole("link", { name: "Users · Admin", exact: true }).click();
+  await clickWorkspaceLink(page, "Users · Admin");
   await expect(page).toHaveURL(/\/dashboard\/admin\/users$/);
   const table = page.locator(".user-table:visible");
   await expect(table.locator("tbody tr")).toHaveCount(10);
@@ -697,38 +725,38 @@ test("RTK Query reuses dashboard lists, details, and taxonomy during navigation"
   await expect(story).toBeVisible();
   const listReads = () => requests.filter((entry) => entry.url.includes(`${api}/me/blogs?`)).length;
   const initialReads = listReads();
-  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await clickWorkspaceLink(page, "Categories & tags");
   await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toBeVisible();
   const taxonomyActions = requests.filter((entry) => entry.action).length;
-  await page.getByRole("link", { name: "Write a story", exact: true }).click();
+  await clickWorkspaceLink(page, "Write a story");
   await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Category", exact: true }).locator("option")).toHaveText(["Select a category", "Ideas", "Life"]);
   expect(requests.filter((entry) => entry.action)).toHaveLength(taxonomyActions);
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(story).toBeVisible();
   expect(listReads()).toBe(initialReads);
   await story.click();
   await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
   const detailReads = () => requests.filter((entry) => entry.url === `${api}/me/blogs/story-1`).length;
   expect(detailReads()).toBe(1);
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await story.click();
   await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
   expect(detailReads()).toBe(1);
   await page.getByRole("textbox", { name: "Story title", exact: true }).fill("Updated through RTK Query");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Your story is published.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("link", { name: "Updated through RTK Query", exact: true })).toBeVisible();
   expect(listReads()).toBeGreaterThan(initialReads);
   // The shared taxonomy write also invalidates already loaded blog labels.
-  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await clickWorkspaceLink(page, "Categories & tags");
   await page.getByRole("button", { name: "Edit Ideas", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Edit category", exact: true });
   await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Shared Ideas");
   await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.locator(".manage-row:visible").filter({ has: page.getByRole("link", { name: "Updated through RTK Query", exact: true }) })).toContainText("Shared Ideas");
   const log = await (await request.get(`${api}/__requests`)).json();
   expect(log.some((entry: { method: string; path: string }) => entry.method === "PATCH" && entry.path === "/api/v1/categories/cat-1")).toBe(true);
@@ -749,7 +777,7 @@ test("activity paginates, shows changes safely, and retains a deleted story snap
   ];
   await request.post(`${api}/__audit-fixtures`, { data: { items: fixtureItems } });
   await login(page);
-  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await clickWorkspaceLink(page, "My activity");
   await expect(page.getByRole("heading", { name: "My activity", exact: true })).toBeVisible();
   await expect(page.getByText("12 actions · 10 per page")).toBeVisible();
   await expect(page.locator(".manage-row:visible")).toHaveCount(10);
@@ -780,10 +808,10 @@ test("activity paginates, shows changes safely, and retains a deleted story snap
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath("activity-mobile.png"), fullPage: true });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "admin@test.local");
-  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await clickWorkspaceLink(page, "My activity");
   await expect(page.getByRole("heading", { name: "Admin moderation", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Edited story 0", exact: true })).toHaveCount(0);
 });
@@ -791,7 +819,7 @@ test("activity paginates, shows changes safely, and retains a deleted story snap
 test("activity handles empty history, list errors, and missing detail records", async ({ page, request }) => {
   await login(page);
   await request.post(`${api}/__fail-request`, { data: { path: "/me/blog-audit-logs", method: "GET", message: "Activity temporarily unavailable", status: 503 } });
-  await page.getByRole("link", { name: "My activity", exact: true }).click();
+  await clickWorkspaceLink(page, "My activity");
   await expect(page.locator("main [role=alert]")).toContainText("Activity temporarily unavailable");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByRole("heading", { name: "No activity yet.", exact: true })).toBeVisible();
@@ -814,18 +842,22 @@ test("RTK Query clears private lists when signing out and switching accounts", a
   await expect(page.getByRole("link", { name: "Thoughtful story 1", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Thoughtful story 1", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Story title", exact: true })).toHaveValue("Thoughtful story 1");
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await page.getByLabel("Email", { exact: true }).fill("other@test.local");
   await page.getByLabel("Password", { exact: true }).fill("password123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/posts\/story-1\/edit$/);
+  await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
+  await openSidebar(page);
   await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   // Sign-in returns to the old editor URL; it must not reuse the previous owner's detail.
   await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("link", { name: "Thoughtful story 2", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Thoughtful story 1", exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await clickWorkspaceLink(page, "Categories & tags");
   await expect(page.getByRole("button", { name: "Edit Life", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit Ideas", exact: true })).toHaveCount(0);
 });
@@ -839,11 +871,13 @@ test("notifications show relative times, paginate, mark read, and keep recipient
   }));
   await request.post(`${api}/__notification-fixtures`, { data: { items: [...items, { ...items[0], id: "other-notice", userId: "other", message: "Other user's notification" }] } });
   await login(page);
+  await openSidebar(page);
   const bell = page.getByRole("link", { name: "Notifications, 12 unread", exact: true });
   await expect(bell).toBeVisible();
   const settings = page.getByRole("link", { name: "Account settings", exact: true });
   expect(await bell.evaluate((element) => element.parentElement === document.querySelector('.sidebar-settings-button[href="/settings"]')?.parentElement)).toBe(true);
   await expect(settings).toBeVisible();
+  await openSidebar(page);
   await bell.click();
   await expect(page).toHaveURL(/\/dashboard\/notifications$/);
   const panel = page.getByRole("region", { name: "Notifications", exact: true });
@@ -858,42 +892,48 @@ test("notifications show relative times, paginate, mark read, and keep recipient
   await expect(panel.getByText("1 minute ago", { exact: true })).toBeVisible();
   await expect(panel.locator("time").first()).toHaveAttribute("title", /\d/);
   await expect(panel.getByRole("link", { name: "Edit story", exact: true })).toHaveAttribute("href", "/dashboard/posts/story-1/edit");
-  await expect(panel.locator("li").nth(1).getByRole("link")).toHaveCount(0);
+  await expect(panel.locator("li").nth(1).getByRole("link", { name: "Open My Trash" })).toHaveAttribute("href", "/dashboard/trash");
   await expect(panel.getByText("Other user's notification")).toHaveCount(0);
   await panel.getByRole("button", { name: "Mark as read", exact: true }).first().click();
+  await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications, 11 unread", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await expect(panel.locator("li").first().getByText("Unread", { exact: true })).toHaveCount(0);
   await panel.getByRole("button", { name: "Next", exact: true }).click();
   await expect(panel.getByText("Page 2 of 2", { exact: true })).toBeVisible();
   await expect(panel.locator("li")).toHaveCount(2);
   await panel.getByRole("button", { name: "Mark all as read", exact: true }).click();
+  await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Mark all as read", exact: true })).toBeDisabled();
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("link", { name: "Notifications", exact: true }).click();
+  await clickWorkspaceLink(page, "Notifications");
   await expect(panel).toBeVisible();
   const bounds = await panel.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath("notifications-mobile.png"), fullPage: true });
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "other@test.local");
-  await page.getByRole("link", { name: "Notifications, 1 unread", exact: true }).click();
+  await clickWorkspaceLink(page, "Notifications, 1 unread");
   await expect(panel.getByText("Other user's notification")).toBeVisible();
   await expect(panel.getByText(items[0].message, { exact: true })).toHaveCount(0);
 });
 
 test("notifications recover from list and read failures and show an empty state", async ({ page, request }) => {
   await login(page);
+  await openSidebar(page);
   const bell = page.getByRole("link", { name: "Notifications", exact: true });
   await expect(bell).toBeVisible();
   await request.post(`${api}/__fail-request`, { data: { path: "/me/notifications", method: "GET", message: "Notifications unavailable", status: 503 } });
+  await openSidebar(page);
   await bell.click();
   await expect(page).toHaveURL(/\/dashboard\/notifications$/);
   const panel = page.getByRole("region", { name: "Notifications", exact: true });
@@ -904,18 +944,23 @@ test("notifications recover from list and read failures and show an empty state"
   await panel.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(panel.getByRole("alert")).toHaveCount(0);
   await expect(panel.getByText("No notifications yet.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "My stories", exact: true }).click();
+  await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
   await request.post(`${api}/__notification-fixtures`, { data: { items: [{ id: "retry-notice", userId: "author", type: "post_deleted", blogId: "story-1", blogTitle: "Deleted", message: "Deleted story notification", readAt: null, createdAt: new Date().toISOString() }] } });
+  await openSidebar(page);
   await bell.click();
   await expect(panel.getByText("Just now", { exact: true })).toBeVisible();
   await request.post(`${api}/__fail-request`, { data: { path: "/me/notifications/retry-notice/read", method: "PATCH", message: "Unable to mark as read", status: 503 } });
   await panel.getByRole("button", { name: "Mark as read", exact: true }).click();
   await expect(panel.getByRole("alert")).toContainText("Unable to mark as read");
+  await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications, 1 unread", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await panel.getByRole("button", { name: "Mark as read", exact: true }).click();
   await expect(panel.getByRole("alert")).toHaveCount(0);
+  await openSidebar(page);
   await expect(bell).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await page.reload();
   await expect(panel.getByText("Deleted story notification", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Mark as read", exact: true })).toHaveCount(0);
@@ -1035,7 +1080,7 @@ test("conversation list shows private summaries, pagination and mobile layout", 
   const gate = new Promise<void>(resolve => { release = resolve; });
   const routePattern = `${api}/chat/conversations?**`;
   await page.route(routePattern, async route => { await gate; await route.continue(); });
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   try {
     await expect(page.getByText("Loading conversations…", { exact: true })).toBeVisible();
   } finally { release(); }
@@ -1065,10 +1110,10 @@ test("conversation list shows private summaries, pagination and mobile layout", 
   await page.screenshot({ path: test.info().outputPath("conversations-mobile.png"), fullPage: true });
   const reads = await readRequests();
   expect(reads.every((entry: { path: string; method: string }) => entry.method === "GET" && entry.path.startsWith("/api/v1/chat/conversations?"))).toBe(true);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "other@test.local");
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list.getByRole("button", { name: "Open conversation with Alex Writer", exact: true })).toBeVisible();
   await expect(list.getByText("Sam Editor", { exact: true })).toHaveCount(0);
@@ -1079,7 +1124,7 @@ test("conversation list protects guests and handles empty results and API errors
   await expect(page).toHaveURL(/\/login\?returnTo=/);
   expect(new URL(page.url()).searchParams.get("returnTo")).toBe("/dashboard/chat");
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await expect(page.getByRole("heading", { name: "No conversations yet.", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Conversation pages" })).toHaveCount(0);
   await request.post(`${api}/__fail-request`, { data: { path: "/chat/conversations", method: "GET", status: 503, message: "Conversations temporarily unavailable" } });
@@ -1113,7 +1158,7 @@ test("message history orders bubbles, loads older pages without duplicates or sc
   const fixture = messageHistoryFixture();
   await request.post(`${api}/__chat-fixtures`, { data: fixture });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   const open = page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true });
   await open.click();
   await expect(open).toHaveAttribute("aria-pressed", "true");
@@ -1165,7 +1210,7 @@ test("message history retries failures and handles empty, missing, and forbidden
   const fixture = messageHistoryFixture();
   await request.post(`${api}/__chat-fixtures`, { data: fixture });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await request.post(`${api}/__fail-request`, { data: { path: `/chat/conversations/${fixture.first}/messages`, method: "GET", status: 503, message: "Messages temporarily unavailable" } });
   await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
   const history = page.getByRole("region", { name: "Message history", exact: true });
@@ -1200,7 +1245,7 @@ test("message history ignores late responses and resets on account changes", asy
     ...fixture.items[1], ownerId: "other", otherUser: { id: "author", displayName: "Alex Writer" },
   }] } });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route(`${api}/chat/conversations/${fixture.first}/messages?**`, async route => { await gate; await route.continue(); });
@@ -1213,10 +1258,10 @@ test("message history ignores late responses and resets on account changes", asy
   } finally { release(); }
   await page.unrouteAll({ behavior: "wait" });
   await expect(history.locator(".chat-message")).toHaveCount(1);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "other@test.local");
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await expect(page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Open conversation with Alex Writer", exact: true }).click();
   await expect(history.locator(".chat-message")).toHaveCount(1);
@@ -1255,7 +1300,7 @@ test("chat sends confirmed messages through the authenticated socket and preserv
     websocket.send('0{"sid":"test-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
   });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
   const composer = page.locator(".chat-composer");
   await expect(composer.getByRole("status")).toHaveText("Chat connected");
@@ -1324,7 +1369,7 @@ test("chat receives live messages without duplicates, preserves reading position
     websocket.send('0{"sid":"live-test-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
   });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
   const history = page.getByRole("region", { name: "Message history", exact: true });
   const messages = history.locator(".chat-message");
@@ -1374,7 +1419,7 @@ test("chat receives live messages without duplicates, preserves reading position
 
 test("chat starts and reuses private conversations and shows recipient errors", async ({ page, request }) => {
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await page.getByLabel("Recipient user ID", { exact: true }).fill("other");
   await page.getByRole("button", { name: "Start conversation", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
@@ -1392,10 +1437,10 @@ test("chat starts and reuses private conversations and shows recipient errors", 
   await expect(page.locator(".chat-start [role=alert]")).toContainText("Recipient not found");
   const requests = await (await request.get(`${api}/__requests`)).json();
   expect(requests.filter((entry: { path: string; method: string }) => entry.path === "/api/v1/chat/conversations" && entry.method === "POST")).toHaveLength(4);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "other@test.local");
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await expect(page.getByRole("button", { name: "Open conversation with Alex Writer", exact: true })).toBeVisible();
 });
 
@@ -1417,18 +1462,20 @@ test("unread chat badge totals all pages and updates across dashboard navigation
     websocket.send('0{"sid":"badge-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000}');
   });
   await login(page);
+  await openSidebar(page);
   const badge = page.locator(".workspace-chat-link:visible .chat-unread-count");
   await expect(badge).toHaveAttribute("aria-label", "102 unread messages");
   await expect(badge).toHaveText("99+");
   await expect.poll(() => connections).toBe(1);
-  await page.getByRole("link", { name: "Categories & tags", exact: true }).click();
+  await clickWorkspaceLink(page, "Categories & tags");
   items = items.map((item, i) => ({ ...item, unreadCount: i === 50 ? 7 : 0 }));
   await request.post(`${api}/__chat-fixtures`, { data: { items } });
   deliver();
   deliver();
+  await openSidebar(page);
   await expect(badge).toHaveText("7");
   await expect(badge).toHaveAttribute("aria-label", "7 unread messages");
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await page.getByRole("button", { name: "Open conversation with Contact 9", exact: true }).click();
   await expect(page.locator(".chat-composer").getByRole("status")).toHaveText("Chat connected");
   expect(connections).toBe(1);
@@ -1436,10 +1483,14 @@ test("unread chat badge totals all pages and updates across dashboard navigation
   items = items.map(item => ({ ...item, unreadCount: 0 }));
   await request.post(`${api}/__chat-fixtures`, { data: { items } });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await openSidebar(page);
   await expect(badge).toHaveCount(0);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
+  await signOut(page);
   await login(page, "other@test.local");
+  await openSidebar(page);
   await expect(badge).toHaveCount(0);
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
 });
 
 test("chat typing, keyboard sending, and canonical read receipts work together", async ({ page, request }) => {
@@ -1475,8 +1526,8 @@ test("chat typing, keyboard sending, and canonical read receipts work together",
     websocket.send('0{"sid":"feature-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":16384}');
   });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
-  await expect(page.locator(".workspace-chat-link:visible .chat-unread-count")).toHaveText("24");
+  await clickWorkspaceLink(page, /^Messages\b/);
+  await expectUnreadCount(page, "24");
   await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
   const composer = page.locator(".chat-composer");
   await expect(composer.getByText("Chat connected", { exact: true })).toBeVisible();
@@ -1484,7 +1535,7 @@ test("chat typing, keyboard sending, and canonical read receipts work together",
   await input.focus();
   await expect.poll(() => events.filter(event => event === "message:read").length).toBeGreaterThan(0);
   await expect(page.getByLabel("23 unread messages", { exact: true })).toHaveCount(0);
-  await expect(page.locator(".workspace-chat-link:visible .chat-unread-count")).toHaveText("1");
+  await expectUnreadCount(page, "1");
   deliver("typing:start", { conversationId: fixture.second, userId: "other" });
   await expect(composer.getByText("Sam Editor is typing…", { exact: true })).toHaveCount(0);
   deliver("typing:start", { conversationId: fixture.first, userId: "admin" });
@@ -1550,7 +1601,7 @@ test("chat deletes only own messages after confirmation and receives deleted pla
     websocket.send('0{"sid":"delete-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000}');
   });
   await login(page);
-  await page.getByRole("link", { name: /^Messages\b/ }).click();
+  await clickWorkspaceLink(page, /^Messages\b/);
   await page.getByRole("button", { name: "Open conversation with Sam Editor", exact: true }).click();
   await expect(page.locator(".chat-composer").getByRole("status")).toHaveText("Chat connected");
   const own = page.locator('[data-message-id="history-044"]');
@@ -1603,7 +1654,7 @@ test("chat deletes only own messages after confirmation and receives deleted pla
   await expect(page.locator(".conversation-preview").filter({ hasText: "This message was deleted." })).toBeVisible();
   await page.unroute(`${api}/chat/conversations?**`);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.locator(".workspace-chat-link:visible .chat-unread-count")).toHaveText("23");
+  await expectUnreadCount(page, "23");
   deliver("message:new", fixture.messages[44]);
   await expect(incoming.locator("p")).toHaveText("This message was deleted.");
 
@@ -1847,7 +1898,7 @@ test("reactions prompt visitors and keep selections separate when accounts chang
   await blog.getByRole("button", { name: "Like (0)", exact: true }).click();
   await expect(blog.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("link", { name: "Profile", exact: true }).click();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login/);
   await login(page, "other@test.local");
   await page.goto("/blogs/thoughtful-story-1");
@@ -2180,7 +2231,7 @@ test("owner Trash restores drafts with the same identity and separately confirms
   await expect(page.getByRole("dialog")).toContainText("will move to Trash");
   await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
   await expect(story).toHaveCount(0);
-  await page.getByRole("link", { name: "My Trash", exact: true }).click();
+  await clickWorkspaceLink(page, "My Trash");
   let trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -2198,7 +2249,7 @@ test("owner Trash restores drafts with the same identity and separately confirms
   await page.getByRole("button", { name: "Move to Trash", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await page.locator("a:visible").filter({ hasText: /^My Trash$/ }).click();
+  await clickWorkspaceLink(page, "My Trash");
   trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
   await trashed.getByRole("button", { name: "Delete permanently", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("comments, replies, reactions");
@@ -2212,7 +2263,9 @@ test("owner Trash restores drafts with the same identity and separately confirms
 test("restricted admins see only granted controls and refresh revoked access without retrying writes", async ({ page, request }) => {
   await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate", "users.manage"] } });
   await login(page);
+  await openSidebar(page);
   await expect(page.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await page.goto("/dashboard/admin/posts");
   const other = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
   await expect(other.getByRole("button", { name: "Inspect", exact: true })).toBeVisible();
@@ -2240,14 +2293,14 @@ test("admin-trashed stories require admin restore and keep publication restricti
   await expect(post.getByRole("button", { name: "Publish", exact: true })).toBeVisible();
   await post.getByRole("button", { name: "Move to Trash", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Move to Trash", exact: true }).click();
-  await page.getByRole("link", { name: "Admin Trash", exact: true }).click();
+  await clickWorkspaceLink(page, "Admin Trash");
   post = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
   await expect(post.getByRole("button", { name: "Restore", exact: true })).toBeVisible();
   const context = await browser.newContext();
   try {
     const author = await context.newPage();
     await login(author);
-    await author.getByRole("link", { name: "My Trash", exact: true }).click();
+    await clickWorkspaceLink(author, "My Trash");
     const ownerPost = author.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 1" });
     await expect(ownerPost).toContainText("an authorized administrator must restore");
     await expect(ownerPost.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0);
@@ -2273,9 +2326,63 @@ test("Admin Trash does not infer restore or purge authority from the delete gran
   await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate", "blogs.delete"] } });
   await page.goto("/login");
   await login(page);
-  await page.getByRole("link", { name: "Admin Trash", exact: true }).click();
+  await clickWorkspaceLink(page, "Admin Trash");
   const trashed = page.locator(".manage-row:visible").filter({ hasText: "Thoughtful story 2" });
   await expect(trashed.getByRole("button", { name: "Preview", exact: true })).toBeVisible();
   await expect(trashed.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0);
   await expect(trashed.getByRole("button", { name: "Delete permanently", exact: true })).toHaveCount(0);
+});
+
+test("sidebar slides over the feed, shows visitor links, and restores keyboard focus", async ({ page }) => {
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Open sidebar", exact: true });
+  const sidebar = page.getByRole("dialog", { name: "Sidebar", exact: true });
+  await expect(sidebar).not.toBeVisible();
+  const feed = page.locator(".feed-page");
+  await expect(feed).toBeVisible();
+  const before = await feed.boundingBox();
+  await toggle.click();
+  await expect(sidebar).toHaveCSS("animation-name", "sidebar-open");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const nav = sidebar.getByRole("navigation", { name: "Account navigation" });
+  await expect(nav.getByRole("link")).toHaveText(["Log in", "Sign up"]);
+  await expect(sidebar.getByRole("navigation", { name: "Workspace navigation" })).toHaveCount(0);
+  expect((await feed.boundingBox())!.width).toBe(before!.width);
+  expect((await feed.boundingBox())!.x).toBe(before!.x);
+  await page.keyboard.press("Escape");
+  await expect(sidebar).not.toBeVisible();
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await sidebar.getByRole("link", { name: "Sign up", exact: true }).click();
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(sidebar).not.toBeVisible();
+});
+
+test("sidebar keeps workspace permissions and fits mobile and dark themes", async ({ page, request }) => {
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate"] } });
+  await login(page);
+  await page.goto("/");
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const sidebar = await openSidebar(page);
+    await expect(sidebar.getByRole("link", { name: "My Trash", exact: true })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
+    await expect(sidebar.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
+    await expect(sidebar.getByRole("link", { name: "Log in", exact: true })).toHaveCount(0);
+    const bounds = await sidebar.boundingBox();
+    expect(bounds!.x).toBe(0);
+    expect(bounds!.width).toBeLessThanOrEqual(width);
+    expect(await sidebar.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await sidebar.screenshot({ path: test.info().outputPath(`sidebar-${width}.png`) });
+    await sidebar.getByRole("button", { name: "Close sidebar", exact: true }).click();
+  }
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  const sidebar = await openSidebar(page);
+  await sidebar.screenshot({ path: test.info().outputPath("sidebar-dark.png") });
+  await sidebar.getByRole("link", { name: "My stories", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(sidebar).not.toBeVisible();
+  await expect(page.locator(".dashboard-sidebar:visible")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
 });

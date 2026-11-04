@@ -3,6 +3,8 @@ import { Suspense, type CSSProperties } from "react";
 import { Toaster } from "sonner";
 import localFont from "next/font/local";
 import Link from "next/link";
+import { WorkspaceSidebar } from "@/modules/base/components/dashboard-shell";
+import { allModules } from "@/lib/registry";
 import ThemeSelect from "@/modules/base/components/theme-select";
 import FaqHelp from "@/modules/base/components/faq-help";
 import ReduxProvider from "@/lib/ReduxProvider";
@@ -32,6 +34,8 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const navItems = allModules.flatMap(module => module.navItems)
+    .sort((a, b) => Number(!!a.admin) - Number(!!b.admin));
   return (
     <html
       lang="en"
@@ -71,9 +75,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <ReduxProvider>
             <header className="site-header">
               <div className="site-container header-inner">
-                <Link className="wordmark" href="/" aria-label="BlogHub home">
-                  BlogHub<span aria-hidden="true">.</span>
-                </Link>
+                <div className="header-brand">
+                  <WorkspaceSidebar navItems={navItems} />
+                  <Link className="wordmark" href="/" aria-label="BlogHub home">
+                    BlogHub<span aria-hidden="true">.</span>
+                  </Link>
+                </div>
                 <nav className="site-nav" aria-label="Main navigation">
                   <AccountNav />
                   <ThemeSelect />

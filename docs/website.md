@@ -81,3 +81,5 @@ Do not pass an application access token or private dashboard response into these
 - Publish or moderate a story from the dashboard, then check the public result after cache invalidation.
 
 Related: [Stories](blog.md), [Taxonomy](taxonomy.md), [Base UI and voice input](base.md).
+
+The header sidebar icon opens the shared left-side drawer without moving the 850px feed. The page background is darker gray, while cards and the writing form remain lighter. See [Base UI](base.md) for navigation and accessibility behavior.

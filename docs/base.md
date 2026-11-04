@@ -7,7 +7,7 @@ Source: [`src/modules/base`](../src/modules/base). This module contains shared i
 | File inside the module | Purpose and usage |
 | --- | --- |
 | `manifest.ts` | Registers the Shared UI module with an empty route/navigation list. |
-| `components/dashboard-shell.tsx` | Wraps account/admin module pages with the workspace sidebar, account details, settings and notification icons, and sign-out action. |
+| `components/dashboard-shell.tsx` | Guards account/admin pages and exports the header-triggered sliding workspace sidebar. |
 | `components/TextField.tsx` | Renders a labelled input and forwards standard input attributes. |
 | `components/confirm-dialog.tsx` | Native modal confirmation dialog used for actions such as deleting stories/taxonomy and changing user access. The caller supplies the action and busy state. |
 | `components/theme-select.tsx` | Light/dark switch used in the root layout. Reads the document theme, listens for system/storage changes, and stores an explicit preference in `localStorage`. |
@@ -15,7 +15,9 @@ Source: [`src/modules/base`](../src/modules/base). This module contains shared i
 
 ## Workspace flow
 
-`moduleRegistry.tsx` gathers navigation items from manifests and passes them to `DashboardShell`. The shell uses `useAuth()` to wait for session restoration, show restoration errors, redirect guests to `/login?returnTo=...`, and restrict admin workspace paths to administrators. NestJS remains the authority for protected data.
+`src/app/layout.tsx` gathers navigation items from manifests and passes them to `WorkspaceSidebar`. `moduleRegistry.tsx` wraps protected pages in `DashboardShell`, which waits for session restoration, shows errors, redirects guests, and checks the route permission. NestJS remains the authority for protected data.
+
+The sidebar is hidden until the header icon is clicked, then slides in from the left over the page. Visitors see only Log in and Sign up. Signed-in users see permission-filtered workspace links. Close and Escape dismiss the panel and restore focus; selecting a link closes it. The panel locks background scrolling and respects reduced-motion preferences. There is no second permanent workspace sidebar.
 
 The sidebar places the notification bell and settings link beside the account name. The Messages link renders the chat module’s shared unread badge; see [Chat](chat.md#messages-sidebar-badge). Sign-out calls the existing authentication action. The shell does not fetch or own story, taxonomy, or chat data.
 

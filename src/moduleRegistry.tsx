@@ -41,8 +41,5 @@ export default async function ModulePage({
     />
   );
   if (!resolved.route.access) return page;
-  const navItems = allModules.flatMap((module) => module.navItems);
-  // Preserve the existing workspace order while obtaining links from manifests.
-  navItems.sort((a, b) => Number(!!a.admin) - Number(!!b.admin));
-  return <DashboardShell navItems={navItems} permission={resolved.route.permission}>{page}</DashboardShell>;
+  return <DashboardShell permission={resolved.route.permission}>{page}</DashboardShell>;
 }
