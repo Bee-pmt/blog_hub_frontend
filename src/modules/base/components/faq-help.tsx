@@ -192,11 +192,6 @@ export default function FaqHelp() {
         <div className="faq-messages" ref={history} onScroll={() => {
           if (history.current) nearBottom.current = history.current.scrollHeight - history.current.scrollTop - history.current.clientHeight < 80;
         }}>
-          <div className="faq-topics" aria-label="Suggested questions">
-            {suggestionLoading ? <p role="status">Loading suggested questions…</p> : suggestionError ? (
-              <p className="notice" role="alert">{suggestionError}{" "}<button className="text-link" disabled={!!blockedUntil} onClick={() => void loadSuggestions(categoryId)}>Retry suggestions</button></p>
-            ) : suggestions.length ? <FaqSuggestions items={suggestions} disabled={busy || !!blockedUntil} onChoose={ask} /> : <p className="muted">No suggested questions in this category. You can still type a question.</p>}
-          </div>
           <ol className="faq-history" role="log" aria-label="FAQ conversation" aria-live="polite" aria-relevant="additions text">
             {messages.map((message, index) => (
               <li key={index} className={`faq-message faq-message-${message.role}`}>
@@ -207,6 +202,11 @@ export default function FaqHelp() {
             ))}
           </ol>
           {busy && <p role="status">Looking up your question…</p>}
+          <div className="faq-topics" aria-label="Suggested questions">
+            {suggestionLoading ? <p role="status">Loading suggested questions…</p> : suggestionError ? (
+              <p className="notice" role="alert">{suggestionError}{" "}<button className="text-link" disabled={!!blockedUntil} onClick={() => void loadSuggestions(categoryId)}>Retry suggestions</button></p>
+            ) : suggestions.length ? <FaqSuggestions items={suggestions} disabled={busy || !!blockedUntil} onChoose={ask} /> : <p className="muted">No suggested questions in this category. You can still type a question.</p>}
+          </div>
         </div>
         <form className="faq-form" onSubmit={submit}>
           {error && <p className="notice" role="alert">{error}</p>}
