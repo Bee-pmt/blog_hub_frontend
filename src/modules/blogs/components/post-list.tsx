@@ -97,8 +97,7 @@ export default function PostList({ data: initial, filters, startWriting = false 
   const seeded = useRef(false);
   const [ready, setReady] = useState(false);
   const [editor, setEditor] = useState<{ id?: string } | null>(startWriting ? {} : null);
-  const editorSection = useRef<HTMLElement>(null);
-  const feedSection = useRef<HTMLDivElement>(null);
+  const editorSection = useRef<HTMLDialogElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const writeButton = useRef<HTMLButtonElement>(null);
   const feed = useGetFeedInfiniteQuery(filters, { skip: !ready });
@@ -117,7 +116,7 @@ export default function PostList({ data: initial, filters, startWriting = false 
   }, [initial, filters, store]);
 
   useEffect(() => {
-    if (editor && userId) editorSection.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (editor && userId && !editorSection.current?.open) editorSection.current?.showModal();
   }, [editor, userId]);
 
   useEffect(() => {
@@ -131,7 +130,6 @@ export default function PostList({ data: initial, filters, startWriting = false 
 
   function closeEditor() {
     setEditor(null);
-    feedSection.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     requestAnimationFrame(() => writeButton.current?.focus({ preventScroll: true }));
   }
 
@@ -142,11 +140,16 @@ export default function PostList({ data: initial, filters, startWriting = false 
 
   return (
     <>
-      {editor && user && <section ref={editorSection} id="feed-editor" className="feed-editor" aria-label="Write blog">
-        <button className="text-link feed-editor-close" data-leave-editor type="button" onClick={closeEditor}>← Back to feed</button>
-        <PostEditor key={`${user.id}:${user.role}:${editor.id || "new"}`} id={editor.id} onSaved={saved} />
-      </section>}
-      <div ref={feedSection} className="feed-posts">
+      {editor && user && <dialog ref={editorSection} id="feed-editor" className="feed-editor" aria-label="Write blog" onCancel={(event) => {
+        event.preventDefault();
+        editorSection.current?.querySelector<HTMLButtonElement>("[data-leave-editor]")?.click();
+      }}>
+        <div className="feed-editor-content">
+          <button className="text-link feed-editor-close" data-leave-editor type="button" onClick={closeEditor}>← Back to feed</button>
+          <PostEditor key={`${user.id}:${user.role}:${editor.id || "new"}`} id={editor.id} onSaved={saved} />
+        </div>
+      </dialog>}
+      <div className="feed-posts">
         <p className="result-count">{total} {total === 1 ? "story" : "stories"}</p>
         {posts.length ? <div className="post-grid feed-list">{posts.map((post) => <FeedPost key={post.id} post={post} />)}</div> : (
           <div className="empty-state"><h3>No stories found</h3><p>Try another search or clear the filters.</p><Link className="text-link" href="/#journal">See all stories</Link></div>

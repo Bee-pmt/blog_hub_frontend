@@ -2085,13 +2085,14 @@ test("feed owns post menus and refreshes all loaded pages after unpublishing and
   await expect(page.getByRole("heading", { name: "Thoughtful story 3", exact: true })).toHaveCount(0);
 });
 
-test("feed expands the existing editor in place and preserves draft and leave protections", async ({ page }) => {
+test("feed opens the existing editor upward and preserves draft and leave protections", async ({ page }) => {
   await login(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Write blog", exact: false }).click();
-  const editor = page.getByRole("region", { name: "Write blog", exact: true });
+  const editor = page.getByRole("dialog", { name: "Write blog", exact: true });
   await expect(editor.getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
   expect(new URL(page.url()).pathname).toBe("/");
+  await expect(editor).toHaveCSS("animation-name", "feed-editor-open");
   const bounds = await editor.boundingBox();
   expect(bounds!.height).toBeGreaterThanOrEqual((await page.evaluate(() => innerHeight)) - 160);
   await editor.getByLabel("Story title", { exact: true }).fill("An inline story");
@@ -2112,7 +2113,7 @@ test("feed expands the existing editor in place and preserves draft and leave pr
   await page.getByRole("button", { name: "Write blog", exact: false }).click();
   await editor.getByLabel("Story title", { exact: true }).fill("Keep my unsaved writing");
   page.once("dialog", dialog => dialog.dismiss());
-  await editor.getByRole("button", { name: "Back to feed", exact: false }).click();
+  await page.keyboard.press("Escape");
   await expect(editor).toBeVisible();
   page.once("dialog", dialog => dialog.accept());
   await editor.getByRole("button", { name: "Back to feed", exact: false }).click();
@@ -2129,7 +2130,7 @@ test("feed writing prompts visitors to sign in and returns to the inline editor"
   await page.getByLabel("Password", { exact: true }).fill("password123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\?write=1#feed-editor$/);
-  await expect(page.getByRole("region", { name: "Write blog", exact: true }).getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
+  await expect(page.getByRole("dialog", { name: "Write blog", exact: true }).getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
 });
 
 test("feed keeps loaded cards on scroll errors and fits mobile and desktop themes", async ({ page, request }) => {
