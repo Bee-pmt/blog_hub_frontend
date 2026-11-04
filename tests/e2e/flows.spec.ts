@@ -89,7 +89,7 @@ async function login(page: Page, email = "author@test.local") {
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.locator('[data-sonner-toast][data-type="success"]').filter({ hasText: "Signed in successfully." })).toBeVisible();
 }
-test("published stories, combined URL filters, pagination and safe article", async ({
+test("published stories, combined URL filters, scrolling feed and safe article", async ({
   page,
 }) => {
   await page.goto("/");
@@ -98,11 +98,11 @@ test("published stories, combined URL filters, pagination and safe article", asy
     path: test.info().outputPath("journal.png"),
     fullPage: true,
   });
-  await page.getByRole("link", { name: "Next", exact: true }).click();
-  await expect(page).toHaveURL(/page=2/);
-  await expect(
-    page.getByRole("heading", { name: "Thoughtful story 10", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Story pages" })).toHaveCount(0);
+  await page.locator(".feed-sentinel:visible").scrollIntoViewIfNeeded();
+  await expect(page.getByRole("heading", { name: "Thoughtful story 10", exact: true })).toBeVisible();
+  await expect(page.locator(".feed-card:visible")).toHaveCount(12);
+  await expect(page).not.toHaveURL(/page=2/);
   await page.getByLabel("Search stories").fill("story 1");
   await page.getByLabel("Author", { exact: true }).fill("Alex");
   await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -1811,6 +1811,18 @@ test("reactions toggle and replace votes on blogs, comments and expanded replies
   await expect(reply.getByRole("button", { name: "Dislike (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
   const calls = await (await request.get(`${api}/__requests`)).json();
   expect(calls.some((item: { path: string; method: string }) => item.path === "/api/v1/comments/reply/reactions" && item.method === "POST")).toBe(true);
+  await blog.getByRole("link", { name: "Comment", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Comments", exact: true })).toBeInViewport();
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await page.screenshot({ path: test.info().outputPath(`article-social-${width}.png`), fullPage: true });
+  }
+  await page.getByRole("switch", { name: "Dark mode" }).click();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.screenshot({ path: test.info().outputPath("article-social-mobile-dark.png"), fullPage: true });
 });
 
 test("reactions prompt visitors and keep selections separate when accounts change", async ({ page, request }) => {
@@ -2042,4 +2054,101 @@ test("FAQ help retries metadata manually, renders plain text and keeps older mes
   await panel.getByRole("button", { name: "Send", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   expect(await panel.locator(".faq-messages").evaluate(element => element.scrollTop)).toBe(0);
+});
+
+test("feed owns post menus and refreshes all loaded pages after unpublishing and deletion", async ({ page }) => {
+  await login(page);
+  await page.goto("/");
+  await page.locator(".feed-sentinel:visible").scrollIntoViewIfNeeded();
+  await expect(page.locator(".feed-card:visible")).toHaveCount(12);
+  const own = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 1", exact: true }) });
+  const other = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
+  await expect(other.locator("summary")).toHaveCount(0);
+  await own.locator("summary").click();
+  await expect(own.getByRole("link", { name: "Edit", exact: true })).toHaveAttribute("href", "/dashboard/posts/story-1/edit");
+  await own.getByRole("button", { name: "Unpublish", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Thoughtful story 1", exact: true })).toHaveCount(0);
+  await expect(page.locator(".feed-card:visible")).toHaveCount(11);
+  await expect(page.getByRole("heading", { name: "Thoughtful story 12", exact: true })).toBeVisible();
+  const next = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 3", exact: true }) });
+  await next.locator("summary").click();
+  await next.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(next).toBeVisible();
+  await next.locator("summary").click();
+  await next.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently" }).click();
+  await expect(page.locator(".feed-card:visible")).toHaveCount(10);
+  await expect(page.getByText("10 stories", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Thoughtful story 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Thoughtful story 3", exact: true })).toHaveCount(0);
+});
+
+test("feed expands the existing editor in place and preserves draft and leave protections", async ({ page }) => {
+  await login(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Write blog", exact: false }).click();
+  const editor = page.getByRole("region", { name: "Write blog", exact: true });
+  await expect(editor.getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
+  expect(new URL(page.url()).pathname).toBe("/");
+  const bounds = await editor.boundingBox();
+  expect(bounds!.height).toBeGreaterThanOrEqual((await page.evaluate(() => innerHeight)) - 160);
+  await editor.getByLabel("Story title", { exact: true }).fill("An inline story");
+  await editor.getByRole("combobox", { name: "Category", exact: true }).selectOption("cat-1");
+  await editor.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await editor.getByRole("textbox", { name: "Story content", exact: true }).fill("## Inline writing\n\nThe same editor and validation.");
+  await editor.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Edit your story", exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/");
+  await editor.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "An inline story", exact: true })).toBeVisible();
+  await expect(page.getByText("13 stories", { exact: true })).toBeVisible();
+  const card = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "An inline story", exact: true }) });
+  await expect(card.getByRole("link", { name: "Comment", exact: true })).toHaveAttribute("href", /\/blogs\/an-inline-story#comments$/);
+  await card.getByRole("button", { name: "Like (0)", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Write blog", exact: false }).click();
+  await editor.getByLabel("Story title", { exact: true }).fill("Keep my unsaved writing");
+  page.once("dialog", dialog => dialog.dismiss());
+  await editor.getByRole("button", { name: "Back to feed", exact: false }).click();
+  await expect(editor).toBeVisible();
+  page.once("dialog", dialog => dialog.accept());
+  await editor.getByRole("button", { name: "Back to feed", exact: false }).click();
+  await expect(editor).toHaveCount(0);
+  await page.getByRole("button", { name: "Write blog", exact: false }).click();
+  await expect(editor.getByText("Unsaved writing found.", { exact: true })).toBeVisible();
+});
+
+test("feed writing prompts visitors to sign in and returns to the inline editor", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: /Good ideas/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Write blog", exact: false }).click();
+  await page.getByLabel("Email", { exact: true }).fill("author@test.local");
+  await page.getByLabel("Password", { exact: true }).fill("password123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\?write=1#feed-editor$/);
+  await expect(page.getByRole("region", { name: "Write blog", exact: true }).getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
+});
+
+test("feed keeps loaded cards on scroll errors and fits mobile and desktop themes", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.locator(".feed-card:visible")).toHaveCount(9);
+  await request.post(`${api}/__fail-request`, { data: { path: "/blogs", method: "GET", status: 503, message: "Feed temporarily unavailable" } });
+  await page.locator(".feed-sentinel:visible").scrollIntoViewIfNeeded();
+  await expect(page.getByRole("alert").filter({ hasText: "Feed temporarily unavailable" })).toBeVisible();
+  await expect(page.locator(".feed-card:visible")).toHaveCount(9);
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".feed-card:visible")).toHaveCount(12);
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.getByRole("link", { name: "Write blog", exact: false })).toBeInViewport();
+    await page.screenshot({ path: test.info().outputPath(`feed-${width}.png`) });
+  }
+  await page.getByRole("switch", { name: "Dark mode" }).click();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.screenshot({ path: test.info().outputPath("feed-mobile-dark.png") });
 });

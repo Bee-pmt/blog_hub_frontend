@@ -3,6 +3,11 @@
 Published articles show comments below the story. Anyone can read them. Sign in
 with the existing BlogHub account to post a comment or reply.
 
+The article uses a compact social-post card with an author initial avatar. Its
+reaction bar includes a Comment shortcut. Comments and replies use initial avatars,
+rounded text bubbles, compact reaction buttons, and indented reply threads. The
+existing light/dark colors, permissions, pagination, and API behavior are preserved.
+
 ## Files and flow
 
 - `src/modules/website/pages/Article.tsx` passes `post.id` (the UUID, not the slug)

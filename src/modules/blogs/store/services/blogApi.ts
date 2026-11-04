@@ -7,6 +7,7 @@ import type {
   BlogPage,
   BlogAuditLog,
   BlogAuditPage,
+  Filters,
 } from "../../types";
 import { saveBlog } from "../../api";
 import { ApiError, errorMessage } from "@/lib/api-client";
@@ -16,6 +17,17 @@ import { sessionEnded } from "@/modules/auth/store/slices/authSlice";
 
 export const blogApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    getFeed: builder.infiniteQuery<BlogPage, Filters, number>({
+      infiniteQueryOptions: {
+        initialPageParam: 1,
+        getNextPageParam: (lastPage) => lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+      },
+      query: ({ queryArg, pageParam }) => ({
+        route: `/blogs${queryString({ ...queryArg, page: pageParam, limit: 9 })}`,
+        public: true,
+      }),
+      providesTags: ["Blog"],
+    }),
     getMyBlogAuditLogs: builder.query<BlogAuditPage, number>({
       query: (page) => ({
         route: `/me/blog-audit-logs${queryString({ page, limit: 10 })}`,
@@ -84,6 +96,7 @@ export const blogApi = baseApi.injectEndpoints({
   }),
 });
 export const {
+  useGetFeedInfiniteQuery,
   useGetMyBlogAuditLogsQuery,
   useGetMyBlogAuditLogQuery,
   useGetManagedBlogsQuery,

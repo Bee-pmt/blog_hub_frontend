@@ -23,13 +23,13 @@ The manifest marks workspace routes as account/admin routes. The admin list prov
 | `types/index.ts` | Story summaries/full content, pagination, filters, save input, browser drafts, and audit response types. |
 | `api.ts` | Public list/detail helpers, save request formatting, and validation/normalization of displayed image URLs. |
 | `cache.ts` | Public cached list/detail functions tagged `blogs`. |
-| `store/services/blogApi.ts` | Authenticated queries and story/audit mutations in RTK Query. |
+| `store/services/blogApi.ts` | Public infinite feed, authenticated queries, and story/audit mutations in RTK Query. |
 | `components/post-manager.tsx` | Author/admin list modes, filters, pagination, publish/unpublish, and delete confirmation. |
-| `components/post-editor.tsx` | Form lifecycle, loading existing content/taxonomy, editor modes, image selection, validation, save/delete, and recovery decisions. |
+| `components/post-editor.tsx` | Form lifecycle, loading existing content/taxonomy, editor modes, image selection, validation, save/delete, and recovery decisions; optional `onSaved` supports inline feed writing. |
 | `components/rich-editor.tsx` | Tiptap visual editing and its formatting controls. |
 | `editor-validation.ts` | Save validation and detection of Markdown that should stay in source mode. |
 | `hooks/use-draft-recovery.ts` | Debounced browser recovery copies and unsaved-navigation handling. |
-| `components/post-list.tsx` | Public story result cards and result pagination. |
+| `components/post-list.tsx` | Scrolling public feed, own-post menus, and inline editor hosting. |
 | `components/search-filters.tsx` | URL-based public search/refinements and integration with the shared voice button. |
 | `components/markdown.tsx` | Markdown display with GFM, skipped raw HTML, restricted URLs, and table/image rendering. |
 | `components/blog-image.tsx` | Browser image display with URL checks and an unavailable-image fallback. |
@@ -37,7 +37,7 @@ The manifest marks workspace routes as account/admin routes. The admin list prov
 
 ## Public reads versus private dashboard reads
 
-Public home/article pages call `getCachedBlogs()` or `getCachedBlog(slug)`. These functions call the public API helpers and use Next.js cache tag `blogs`, with `stale: 0`, `revalidate: 60`, and `expire: 120`. Public responses do not enter the auth slice or dashboard RTK Query cache.
+Public home/article pages call `getCachedBlogs()` or `getCachedBlog(slug)`. These functions call the public API helpers and use Next.js cache tag `blogs`, with `stale: 0`, `revalidate: 60`, and `expire: 120`. The first feed page seeds a public RTK Query infinite-query entry; later pages load through the public API wrapper. These results do not enter the auth slice.
 
 `PostManager`, `PostEditor`, and `BlogActivity` use generated RTK Query hooks. Those call authenticated endpoints through the shared `baseApi`. The `Blog` tag refreshes editable/list data; `BlogAudit` refreshes the current user's activity list after successful story mutations.
 

@@ -46,6 +46,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const item of stores) item.dispatch(baseApi.util.resetApiState());
   stores.length = 0;
 });
@@ -349,5 +350,48 @@ describe("RTK Query content", () => {
       "PATCH",
       { body: JSON.stringify({ status: "disabled" }) },
     );
+  });
+});
+
+
+describe("public scrolling feed", () => {
+  it("reuses a seeded first page and fetches the next public page", async () => {
+    const app = store();
+    const first = { ...page, page: 1, total: 18, totalPages: 2, items: [] };
+    await app.dispatch(blogApi.util.upsertQueryData("getFeed", {}, { pages: [first], pageParams: [1] }));
+    const fetch = vi.fn().mockImplementation(async () => Response.json({ ...first, page: 2 }));
+    vi.stubGlobal("fetch", fetch);
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({})).unwrap();
+    expect(fetch).not.toHaveBeenCalled();
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({}, { direction: "forward" })).unwrap();
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(String(fetch.mock.calls[0][0])).toContain("/blogs?page=2&limit=9");
+    expect(fetch.mock.calls[0][1].headers.has("Authorization")).toBe(false);
+    expect(blogApi.endpoints.getFeed.select({})(app.getState()).data?.pageParams).toEqual([1, 2]);
+  });
+
+  it("refetches all loaded pages after a blog mutation invalidates the feed", async () => {
+    const app = store();
+    const fetch = vi.fn().mockImplementation(async (url: string) => Response.json({ ...page, page: Number(new URL(url).searchParams.get("page")), totalPages: 2, total: 18 }));
+    vi.stubGlobal("fetch", fetch);
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({ q: "test" })).unwrap();
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({ q: "test" }, { direction: "forward" })).unwrap();
+    app.dispatch(blogApi.util.invalidateTags(["Blog"]));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(fetch.mock.calls.slice(2).map(call => new URL(call[0]).searchParams.get("page"))).toEqual(["1", "2"]);
+  });
+
+  it("keeps existing posts when loading the next page fails and supports manual retry", async () => {
+    const app = store();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ ...page, total: 18, totalPages: 2 }))
+      .mockResolvedValueOnce(Response.json({ message: "Temporarily unavailable" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ ...page, page: 2, total: 18, totalPages: 2 }));
+    vi.stubGlobal("fetch", fetch);
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({})).unwrap();
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({}, { direction: "forward" }));
+    expect(blogApi.endpoints.getFeed.select({})(app.getState()).data?.pages).toHaveLength(1);
+    await app.dispatch(blogApi.endpoints.getFeed.initiate({}, { direction: "forward" })).unwrap();
+    expect(blogApi.endpoints.getFeed.select({})(app.getState()).data?.pages).toHaveLength(2);
   });
 });

@@ -6,22 +6,52 @@ Source: [`src/modules/website`](../src/modules/website). This module renders the
 
 | Frontend route | File | Purpose |
 | --- | --- | --- |
-| `/` | `pages/Home.tsx` | Home page, category discovery, search/filter controls, and paginated public stories. |
+| `/` | `pages/Home.tsx` | Home page, category discovery, search/filter controls, and the scrolling public story feed. |
 | `/blogs/[slug]` | `pages/Article.tsx` | Published article with category, author, tags, cover image, and Markdown content. |
 
 `manifest.ts` registers both routes and connects the article metadata function. The Next.js catch-all route resolves the manifest; these module files are not separate App Router entry points.
 
 ## Home page data flow
 
-1. `Home` renders its static sections and a Suspense boundary around the async `Journal` section.
-2. `Journal` reads `q`, `category`, `tag`, `author`, and `page` from the URL search parameters, trims/bounds their values, and normalizes the page number.
-3. It loads `getCachedBlogs({ ...filters, limit: 9 })` and `getCachedTaxonomy()` in parallel.
-4. Those functions use the blogs/taxonomy API helpers, which call `apiWrapper` and then NestJS.
-5. Categories become discovery links; `SearchFilters` receives the current filters and taxonomy; `PostList` renders the result and pagination.
+1. `Home` renders the Feeds heading and a Suspense boundary around `Journal`.
+2. `Journal` reads and bounds `q`, `category`, `tag`, and `author` from the URL.
+3. It loads `getCachedBlogs({ ...filters, page: 1, limit: 9 })` and
+   `getCachedTaxonomy()` in parallel. Public Next.js caching still serves this
+   first page; no access token enters those cache functions.
+4. `PostList` seeds the existing RTK Query store with the server's first page,
+   without fetching it again. A previously cached feed is reused instead.
+5. `getFeed` in `blogApi.ts` uses RTK Query's infinite-query support. Near the
+   bottom, IntersectionObserver fetches the next public page. A Load more stories
+   button supports keyboard users and browsers without IntersectionObserver.
+   Failures preserve loaded cards and offer manual retry.
+6. Search/filter changes update the URL and start a separate feed. Cards are
+   deduplicated by UUID. Blog mutations invalidate/refetch every loaded page so
+   deleting or unpublishing a story does not leave pagination offsets stale.
 
-For example, `/?q=travel&category=life&page=2#journal` requests the second page of matching public stories. Search submissions update the URL, which causes the server section to fetch/render the corresponding result. Voice input feeds this same search submission path.
+For example, `/?q=travel&category=life#journal` starts at the first matching page
+and appends further pages as the reader scrolls. There are no numbered page links.
+Voice search continues to use the same URL-based search submission.
 
-The home page does not put public results into RTK Query or an auth slice. It uses Next.js public caching.
+## Feed controls and writing
+
+Cards use alternating pastel blue/cream surfaces with dark-theme equivalents,
+initial avatars, the existing single cover image, and Like/Dislike/Comment actions.
+Comment opens the existing article's comments section. Only the signed-in author
+sees the two-dot menu: Edit opens the existing editor route; Delete confirms before
+removing; Unpublish returns the story to drafts. NestJS still checks ownership.
+
+The bottom Write blog bar opens the existing `PostEditor` in an inline section
+that fills the available viewport and scrolls into view. Its bundle is loaded on
+demand. Visitors sign in first and return via `/?write=1#feed-editor`.
+
+The editor's optional `onSaved` callback keeps draft saves in the feed rather than
+navigating to a dashboard route. Publishing closes the inline editor and refreshes
+the feed. Back to feed uses the existing unsaved-leave confirmation and recovery
+copy. Drafts remain available through the existing My stories dashboard. The
+original dashboard editor's navigation and behavior are unchanged.
+
+The hero and About landing sections were removed. No friend/popularity filters,
+sharing, extra media fields, or backend features were added.
 
 ## Article data flow
 
@@ -45,7 +75,7 @@ Do not pass an application access token or private dashboard response into these
 ## Manual checks
 
 - Browse the home page without signing in.
-- Search by text, category, tag, and author; navigate to the next result page.
+- Search by text, category, tag, and author; scroll to load more matching stories.
 - Open a story and verify its cover, Markdown, metadata, and filter links.
 - Try a missing slug and a backend outage to check the different error states.
 - Publish or moderate a story from the dashboard, then check the public result after cache invalidation.

@@ -54,23 +54,20 @@ async function Article({ params }: ModulePageProps) {
         ← Back to the journal
       </Link>
       <header className="article-header">
-        <Link
-          className="eyebrow"
-          href={`/${queryString({ category: post.category?.slug })}#journal`}
-        >
-          {post.categoryName}
-        </Link>
+        <div className="article-author">
+          <span className="article-avatar" aria-hidden="true">{Array.from(post.author.displayName.trim())[0]?.toLocaleUpperCase() || "U"}</span>
+          <div>
+            <Link className="article-author-name" href={`/${queryString({ author: post.author.displayName })}#journal`}>
+              By {post.author.displayName}
+            </Link>
+            <div className="post-meta">
+              <time dateTime={post.publishedAt || post.createdAt}>{dateLabel(post.publishedAt || post.createdAt)}</time>
+              <span aria-hidden="true">·</span>
+              <Link className="eyebrow" href={`/${queryString({ category: post.category?.slug })}#journal`}>{post.categoryName}</Link>
+            </div>
+          </div>
+        </div>
         <h1>{post.title}</h1>
-        <p className="post-meta">
-          <Link
-            href={`/${queryString({ author: post.author.displayName })}#journal`}
-          >
-            By {post.author.displayName}
-          </Link>
-          <time dateTime={post.publishedAt || post.createdAt}>
-            {dateLabel(post.publishedAt || post.createdAt)}
-          </time>
-        </p>
         <div className="tag-list">
           {post.tags.map((tag) => (
             <Link

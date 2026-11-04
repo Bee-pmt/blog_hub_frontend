@@ -13,20 +13,17 @@ import PostList from "@/modules/blogs/components/post-list";
 async function Journal({ searchParams }: ModulePageProps) {
   const params = await searchParams;
   const filters: Filters = {};
-  for (const key of ["q", "category", "tag", "author", "page"] as const) {
+  for (const key of ["q", "category", "tag", "author"] as const) {
     const value = params[key];
     if (typeof value === "string" && value.trim())
       filters[key] = value
         .trim()
         .slice(0, key === "author" ? 100 : key === "q" ? 200 : 500);
   }
-  filters.page = /^[1-9]\d*$/.test(filters.page || "")
-    ? String(Math.min(Number(filters.page), 1000000))
-    : "1";
   let result: [BlogPage, Category[], Tag[]];
   try {
     const [blogs, taxonomy] = await Promise.all([
-      getCachedBlogs({ ...filters, limit: 9 }),
+      getCachedBlogs({ ...filters, page: 1, limit: 9 }),
       getCachedTaxonomy(),
     ]);
     result = [blogs, taxonomy.categories, taxonomy.tags];
@@ -71,64 +68,19 @@ async function Journal({ searchParams }: ModulePageProps) {
         filters={filters}
       />
 
-      <PostList data={data} filters={filters} />
+      <PostList key={`${queryString(filters)}:${params.write === "1"}`} data={data} filters={filters} startWriting={params.write === "1"} />
     </>
   );
 }
 
 export default function Home(props: ModulePageProps) {
   return (
-    <main id="main-content" className="site-container">
-      <section className="hero">
-        <p className="eyebrow">
-          <span className="status-dot" /> A home for curious minds
-        </p>
-        <h1>
-          Good ideas.
-          <br />
-          Great stories.
-        </h1>
-        <div className="hero-bottom">
-          <p className="hero-description">
-            Explore fresh perspectives, everyday discoveries, and stories that
-            stay with you. A little inspiration for your next chapter.
-          </p>
-          <Link className="button button-primary" href="/dashboard/posts/new">
-            Write a story <span aria-hidden="true">↗</span>
-          </Link>
-        </div>
-      </section>
+    <main id="main-content" className="site-container feed-page">
       <section className="journal-section" id="journal">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">The journal</p>
-            <h2>Worth all of your time.</h2>
-          </div>
-          <p className="section-note">New voices. Fresh perspectives.</p>
-        </div>
-        <Suspense
-          fallback={
-            <p className="loading-state" role="status">
-              Gathering the latest stories…
-            </p>
-          }
-        >
+        <div className="section-heading"><h1>Feeds</h1></div>
+        <Suspense fallback={<p className="loading-state" role="status">Gathering the latest stories…</p>}>
           <Journal {...props} />
         </Suspense>
-      </section>
-      <section className="about-section" id="about">
-        <p className="eyebrow">Why BlogHub</p>
-        <div>
-          <h2>
-            Everyone has something
-            <br className="desktop-break" /> worth sharing for.
-          </h2>
-          <p>
-            This is a place to think out loud, tell your story, and discover
-            another point of view. Read something new. Write something that
-            matters to you.
-          </p>
-        </div>
       </section>
     </main>
   );

@@ -12,9 +12,10 @@ type Props = {
   kind: "blogs" | "comments";
   id: string;
   totals?: Pick<ReactionSummary, "likeCount" | "dislikeCount">;
+  commentHref?: string;
 };
 
-function Reactions({ kind, id, totals, accountId, sessionLoading }: Props & {
+function Reactions({ kind, id, totals, accountId, sessionLoading, commentHref = "#comments" }: Props & {
   accountId?: string;
   sessionLoading: boolean;
 }) {
@@ -64,7 +65,10 @@ function Reactions({ kind, id, totals, accountId, sessionLoading }: Props & {
   }
 
   return (
-    <div className="reaction-controls">
+    <div className={`reaction-controls reaction-controls-${kind}`}>
+      {kind === "blogs" && summary && (
+        <p className="reaction-summary">{summary.likeCount + summary.dislikeCount} {summary.likeCount + summary.dislikeCount === 1 ? "reaction" : "reactions"}</p>
+      )}
       <div className="actions" role="group" aria-label={kind === "blogs" ? "Story reactions" : "Comment reactions"}>
         <button className="button button-secondary" type="button" disabled={disabled}
           aria-label={`Like (${summary?.likeCount ?? "…"})`} title="Like"
@@ -82,6 +86,14 @@ function Reactions({ kind, id, totals, accountId, sessionLoading }: Props & {
           </svg>
           <span>{summary?.dislikeCount ?? "…"}</span>
         </button>
+        {kind === "blogs" && (
+          <a className="button button-secondary reaction-comment" href={commentHref}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-9.5A8.5 8.5 0 0 1 10.5 4H13a8 8 0 0 1 8 7.5Z" />
+            </svg>
+            <span>Comment</span>
+          </a>
+        )}
       </div>
       {(sessionLoading || isFetching || isLoading) && <p className="field-help" role="status">{isLoading ? "Saving reaction…" : "Loading reactions…"}</p>}
       {signIn && <p><Link className="text-link" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in to react</Link></p>}

@@ -33,9 +33,10 @@ const emptyDraft: Draft = {
 type PostEditorProps = {
   id?: string;
   admin?: boolean;
+  onSaved?: (post: Blog) => void;
 };
 
-export default function PostEditor({ id, admin = false }: PostEditorProps) {
+export default function PostEditor({ id, admin = false, onSaved }: PostEditorProps) {
   const { user } = useAuth();
   const router = useRouter();
   const { control, reset, getValues } = useForm<Draft>({
@@ -201,7 +202,8 @@ export default function PostEditor({ id, admin = false }: PostEditorProps) {
         status === "published" ? "Your story is published." : "Draft saved.",
         { id: "post-save" },
       );
-      if (!id) {
+      if (onSaved) onSaved(saved);
+      else if (!id) {
         allowLeave();
         router.replace(`/dashboard/posts/${saved.id}/edit`);
       }

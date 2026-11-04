@@ -17,6 +17,7 @@ function CommentForm({ blogId, parentId, comment, onDone }: {
   comment?: BlogComment;
   onDone?: () => void;
 }) {
+  const { user } = useAuth();
   const [content, setContent] = useState(comment?.content ?? "");
   const [error, setError] = useState("");
   const [save, { isLoading }] = useSaveCommentMutation();
@@ -45,14 +46,16 @@ function CommentForm({ blogId, parentId, comment, onDone }: {
 
   return (
     <form className="stack comment-form" onSubmit={submit}>
+      {!comment && <span className="comment-avatar" aria-hidden="true">{Array.from(user?.displayName.trim() || "U")[0]?.toLocaleUpperCase()}</span>}
       <label>
-        {comment ? "Edit your comment" : parentId ? "Your reply" : "Your comment"}
+        <span className="sr-only">{comment ? "Edit your comment" : parentId ? "Your reply" : "Your comment"}</span>
         <textarea
           className="form-control"
           value={content}
           onChange={(event) => setContent(event.target.value)}
           maxLength={2000}
-          rows={3}
+          rows={2}
+          placeholder={comment ? "Edit your comment…" : parentId ? "Write a reply…" : "Write a comment…"}
           required
           disabled={isLoading}
         />
@@ -96,16 +99,17 @@ function CommentRow({ comment, blogId }: { comment: BlogComment; blogId: string 
 
   return (
     <li className="comment-row">
-      <div className="post-meta">
+      <span className="comment-avatar" aria-hidden="true">{Array.from(comment.author.displayName.trim())[0]?.toLocaleUpperCase() || "U"}</span>
+      <div className="comment-bubble">
         <strong>{comment.author.displayName}</strong>
-        <time dateTime={comment.createdAt}>{dateLabel(comment.createdAt)}</time>
-        {comment.updatedAt !== comment.createdAt && <span>Edited</span>}
+        {editing ? (
+          <CommentForm blogId={blogId} comment={comment} onDone={() => setEditing(false)} />
+        ) : <p className="comment-content">{comment.content}</p>}
       </div>
-      {editing ? (
-        <CommentForm blogId={blogId} comment={comment} onDone={() => setEditing(false)} />
-      ) : <p className="comment-content">{comment.content}</p>}
       <ReactionButtons kind="comments" id={comment.id} totals={comment} />
       <div className="actions">
+        <time className="comment-date" dateTime={comment.createdAt}>{dateLabel(comment.createdAt)}</time>
+        {comment.updatedAt !== comment.createdAt && <span className="comment-date">Edited</span>}
         {!comment.parentId && (
           <button className="text-link" aria-expanded={open} aria-controls={`replies-${comment.id}`} onClick={() => setOpen(!open)}>
             Replies ({comment.replyCount}){open ? " · Hide" : ""}
@@ -179,7 +183,7 @@ function CommentList({ blogId, parentId }: { blogId: string; parentId?: string }
 export default function CommentSection({ blogId }: { blogId: string }) {
   const { user } = useAuth();
   return (
-    <section className="comment-section" aria-label="Comments">
+    <section id="comments" className="comment-section" aria-label="Comments" tabIndex={-1}>
       <CommentList key={`${blogId}:${user?.id}:${user?.role}`} blogId={blogId} />
     </section>
   );
