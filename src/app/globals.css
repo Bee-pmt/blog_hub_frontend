@@ -2291,3 +2291,61 @@ body:has(.feed-editor[open]) { overflow: hidden; }
 .feed-card .reaction-controls .button { min-height: 44px; padding: 0.5rem; border: 0; border-radius: 0.5rem; font-size: 0.8rem; }
 .feed-card .reaction-controls .button:hover:not(:disabled) { background: var(--subtle); }
 .feed-card .reaction-controls button[aria-pressed="true"]:hover { background: var(--foreground); }
+
+/* Editorial styles stay local to the public story, including its discussion. */
+.article-page { padding-block: 2rem 4rem; }
+.article { max-width: 780px; padding: clamp(1.1rem, 3vw, 2.5rem); background: var(--surface); border-radius: 1rem; }
+.article-back { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; font-size: 0.8rem; }
+.article-header { margin-block: 1.25rem 2rem; }
+.article-header h1 { font-size: clamp(2rem, 4.5vw, 3.5rem); line-height: 1.12; letter-spacing: -0.04em; margin: 0 0 1.5rem; text-wrap: pretty; }
+.article-author { align-items: center; gap: 0.85rem; }
+.article-author > div { min-width: 0; }
+.article .article-avatar { width: 3rem; height: 3rem; }
+.article-author-name { display: inline-block; font-size: 0.95rem; line-height: 1.5; overflow-wrap: anywhere; }
+.article-header .post-meta { gap: 0.5rem; align-items: center; margin-top: 0.25rem; font-size: 0.75rem; }
+.article-category { display: inline-flex; padding: 0.25rem 0.65rem; border-radius: 2rem; background: var(--subtle); color: var(--foreground); overflow-wrap: anywhere; }
+.article-category:hover { text-decoration: underline; }
+.article .tag-list { gap: 0.5rem; margin-top: 1.25rem; }
+.article .tag { padding: 0.35rem 0.7rem; font-size: 0.7rem; }
+.article .article-cover { width: 100%; height: auto; object-fit: contain; margin: 0 auto 2rem; border-radius: 0.75rem; }
+.article .article-cover.image-fallback { min-height: 180px; }
+.article .prose { font-size: clamp(1.0625rem, 1.5vw, 1.125rem); line-height: 1.78; }
+.article .prose > :first-child { margin-top: 0; }
+.article .prose p, .article .prose ul, .article .prose ol { margin-block: 1.2em; }
+.article .prose img { border-radius: 0.65rem; }
+.article .prose pre { max-width: 100%; border-radius: 0.65rem; }
+.article > .reaction-controls { padding-block: 0.85rem; margin-top: 2rem; border-block: 1px solid var(--border); }
+.article .reaction-summary { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.5rem; }
+.article .reaction-controls .actions { gap: 0.4rem; }
+.article .reaction-controls .button { border: 0; border-radius: 2rem; min-height: 44px; padding: 0.5rem 0.85rem; font-size: 0.8rem; background: var(--subtle); }
+.article .reaction-controls button[aria-pressed="true"] { background: var(--foreground); color: var(--background); }
+.article .reaction-controls .button:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--border); }
+.article .comment-section { margin-top: 1.75rem; padding-top: 0.5rem; border-top: 0; }
+.article .comment-section > h2 { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.025em; margin-bottom: 1.25rem; }
+.article .comment-section h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
+.article .comment-avatar { width: 2.25rem; height: 2.25rem; font-size: 0.9rem; }
+.article .comment-form { gap: 0.5rem; margin-block: 1rem 1.5rem; }
+.article .comment-form:has(> .comment-avatar) { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); column-gap: 0.75rem; }
+.article .comment-form:has(> .comment-avatar) > :not(.comment-avatar) { grid-column: 2; min-width: 0; }
+.article .comment-form > .comment-avatar { grid-column: 1; grid-row: 1 / span 4; }
+.article .comment-form textarea { display: block; min-height: 100px; margin: 0; padding: 0.85rem 1rem; border-radius: 0.75rem; font-size: 0.95rem; line-height: 1.6; }
+.article .comment-form .field-help { text-align: right; font-size: 0.7rem; }
+.article .comment-form .button { border-radius: 2rem; padding: 0.65rem 1rem; min-height: 44px; font-size: 0.8rem; }
+.article .comment-row { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); column-gap: 0.75rem; padding-block: 1.25rem; }
+.article .comment-row > :not(.comment-avatar) { grid-column: 2; min-width: 0; }
+.article .comment-row > .comment-avatar { grid-column: 1; grid-row: 1 / span 2; }
+.article .comment-bubble strong { font-size: 0.9rem; }
+.article .comment-content { font-size: 0.95rem; line-height: 1.7; margin-block: 0.35rem 0.65rem; }
+.article .comment-row > .reaction-controls { margin-block: 0 0.25rem; }
+.article .comment-row > .actions { gap: 0.25rem 0.85rem; font-size: 0.75rem; }
+.article .comment-row > .actions button { min-height: 44px; }
+.article .comment-date { color: var(--muted); font-size: 0.7rem; }
+.article .comment-replies { padding-left: 0.75rem; border-left-width: 1px; }
+.article .comment-section > .muted { font-size: 0.9rem; padding-block: 1.25rem; }
+@media (max-width: 600px) {
+  .article-page { padding-top: 1rem; }
+  .article-header { margin-block: 1rem 1.5rem; }
+  .article .reaction-controls .button { padding-inline: 0.65rem; }
+  .article .comment-row { column-gap: 0.5rem; }
+  .article .comment-row > .comment-replies { grid-column: 1 / -1; }
+}

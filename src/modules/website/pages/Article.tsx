@@ -2,6 +2,7 @@ import type { ModulePageProps } from "@/moduleTypes";
 import type { Blog } from "@/modules/blogs/types";
 import { cache, Suspense } from "react";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ApiError, errorMessage } from "@/lib/api-client";
 import { dateLabel, queryString } from "@/lib/utils";
@@ -50,10 +51,11 @@ async function Article({ params }: ModulePageProps) {
   }
   return (
     <article className="article">
-      <Link className="text-link muted" href="/#journal">
-        ← Back to the journal
+      <Link className="text-link muted article-back" href="/#journal">
+        <ArrowLeft size={17} aria-hidden="true" /> Back to the journal
       </Link>
       <header className="article-header">
+        <h1>{post.title}</h1>
         <div className="article-author">
           <span className="article-avatar" aria-hidden="true">{Array.from(post.author.displayName.trim())[0]?.toLocaleUpperCase() || "U"}</span>
           <div>
@@ -63,12 +65,11 @@ async function Article({ params }: ModulePageProps) {
             <div className="post-meta">
               <time dateTime={post.publishedAt || post.createdAt}>{dateLabel(post.publishedAt || post.createdAt)}</time>
               <span aria-hidden="true">·</span>
-              <Link className="eyebrow" href={`/${queryString({ category: post.category?.slug })}#journal`}>{post.categoryName}</Link>
+              <Link className="article-category" href={`/${queryString({ category: post.category?.slug })}#journal`}>{post.categoryName}</Link>
             </div>
           </div>
         </div>
-        <h1>{post.title}</h1>
-        <div className="tag-list">
+        {post.tags.length > 0 && <div className="tag-list">
           {post.tags.map((tag) => (
             <Link
               className="tag"
@@ -78,7 +79,7 @@ async function Article({ params }: ModulePageProps) {
               {tag.name}
             </Link>
           ))}
-        </div>
+        </div>}
       </header>
       {post.coverImageUrl && (
         <BlogImage src={post.coverImageUrl} className="article-cover" />

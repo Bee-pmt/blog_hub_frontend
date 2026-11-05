@@ -77,7 +77,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <div className="site-container header-inner">
                 <div className="header-brand">
                   <Link className="wordmark" href="/" aria-label="BlogHub home">
-                    BlogHub<span aria-hidden="true">.</span>
+                    BlogHub<span aria-hidden="true"></span>
                   </Link>
                 </div>
                 <nav className="site-nav" aria-label="Main navigation">

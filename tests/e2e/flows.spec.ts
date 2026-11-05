@@ -2478,3 +2478,49 @@ test("header shares the responsive content edges and light surfaces preserve dar
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(20, 21, 23)");
   await expect(page.getByLabel("Search stories", { exact: true })).toHaveCSS("background-color", "rgb(28, 28, 28)");
 });
+
+test("editorial articles preserve cover proportions and readable discussion across themes and widths", async ({ page, request }) => {
+  const { accessToken } = await (await request.post(`${api}/auth/login`, { data: { email: "author@test.local", password: "password123" } })).json();
+  await login(page);
+  for (const [shape, imageWidth, imageHeight] of [["landscape", 1200, 600], ["portrait", 600, 900]] as const) {
+    const imageUrl = `http://localhost:5301/editorial-${shape}.svg`;
+    await page.route(imageUrl, route => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" width="${imageWidth}" height="${imageHeight}"><rect width="100%" height="100%" fill="#667780"/></svg>` }));
+    const response = await request.post(`${api}/blogs`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      data: { title: `An editorial ${shape} story with a naturally wrapping title`, status: "published", categoryId: "cat-1", tagIds: ["tag-1"], coverImageUrl: imageUrl,
+        content: `## A readable heading\n\nA paragraph with **bold text** and [a link](https://example.com).\n\n- First point\n- Second point\n\n\`\`\`text\n${"long-line-".repeat(60)}\n\`\`\`\n\n![Embedded example](${imageUrl})` },
+    });
+    expect(response.status()).toBe(201);
+    const blog = await response.json();
+    await request.post(`${api}/__comment-fixtures`, { data: { items: [{ ...commentFixture("editorial-comment", "A thoughtful comment that remains readable."), blogId: blog.id }] } });
+    await page.goto(`/blogs/${blog.slug}`);
+    for (const width of [390, 820, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const article = page.locator(".article");
+      expect((await article.boundingBox())!.width).toBeLessThanOrEqual(780);
+      const cover = page.locator(".article-cover");
+      await cover.scrollIntoViewIfNeeded();
+      await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(imageWidth);
+      const box = (await cover.boundingBox())!;
+      expect(Math.abs(box.width / box.height - imageWidth / imageHeight)).toBeLessThan(0.01);
+      await expect(cover).toHaveCSS("object-fit", "contain");
+      await expect(cover).toHaveAttribute("loading", "lazy");
+      const comments = page.getByRole("region", { name: "Comments", exact: true });
+      await expect(comments.getByRole("heading", { name: "Comments (1)", exact: true })).toBeVisible();
+      await expect(comments.getByRole("textbox", { name: "Your comment", exact: true })).toHaveAttribute("maxlength", "2000");
+      const avatar = await comments.locator(".comment-form > .comment-avatar").boundingBox();
+      const input = await comments.getByRole("textbox", { name: "Your comment", exact: true }).boundingBox();
+      expect(avatar!.x + avatar!.width).toBeLessThan(input!.x);
+      const actions = article.getByRole("group", { name: "Story reactions", exact: true });
+      for (const button of await actions.locator("button, a").all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+        expect(await article.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(await page.locator("body").evaluate(element => getComputedStyle(element).backgroundColor));
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: test.info().outputPath(`article-${shape}-${width}-${theme}.png`), fullPage: true });
+      }
+    }
+    await page.getByRole("link", { name: "Back to the journal", exact: false }).click();
+    await expect(page).toHaveURL(/\/#journal$/);
+  }
+});
