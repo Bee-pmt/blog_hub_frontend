@@ -2294,8 +2294,8 @@ body:has(.feed-editor[open]) { overflow: hidden; }
 
 /* Editorial styles stay local to the public story, including its discussion. */
 .article-page { padding-block: 2rem 4rem; }
-.article { max-width: 920px; padding: clamp(1.1rem, 3vw, 2.5rem); background: var(--surface); border-radius: 1rem; }
-.article > :not(.article-cover) { width: 100%; max-width: 740px; margin-inline: auto; }
+.article { max-width: 1060px; padding: clamp(1.1rem, 3vw, 2.5rem); background: var(--surface); border-radius: 1rem; }
+.article > :not(.article-cover) { width: 100%; max-width: 840px; margin-inline: auto; }
 .article-back { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; font-size: 0.8rem; }
 .article-header { margin-block: 1.25rem 2rem; }
 .article-header h1 { font-size: clamp(2rem, 4.5vw, 3.5rem); line-height: 1.12; letter-spacing: -0.04em; margin: 0 0 1.5rem; text-wrap: pretty; }

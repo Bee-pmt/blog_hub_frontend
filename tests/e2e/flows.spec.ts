@@ -2499,16 +2499,16 @@ test("editorial articles preserve cover proportions and readable discussion acro
       const article = page.locator(".article");
       const card = (await article.boundingBox())!;
       const region = (await page.locator(".site-main").boundingBox())!;
-      expect(card.width).toBeLessThanOrEqual(920);
+      expect(card.width).toBeLessThanOrEqual(1060);
       expect(Math.abs(card.x + card.width / 2 - region.x - region.width / 2)).toBeLessThan(1);
       if (width >= 1440) {
-        expect(card.width).toBe(920);
+        expect(card.width).toBe(1060);
         const sidebar = (await page.getByRole("complementary", { name: "Sidebar", exact: true }).boundingBox())!;
         expect(sidebar.width).toBe(240);
         expect(region.x - sidebar.x - sidebar.width).toBe(32);
       }
       const body = (await article.locator(":scope > .prose").boundingBox())!;
-      expect(body.width).toBeLessThanOrEqual(740);
+      expect(body.width).toBeLessThanOrEqual(840);
       for (const selector of [".article-back", ".article-header", ":scope > .reaction-controls", ".comment-section"]) {
         const section = (await article.locator(selector).boundingBox())!;
         expect(Math.abs(section.x - body.x)).toBeLessThan(1);
