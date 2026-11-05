@@ -649,21 +649,21 @@ test("admin user management searches, paginates, confirms role changes and manag
   await expect(table.locator("tbody tr")).toHaveCount(1);
   await expect(page.getByRole("navigation", { name: "User pages" }).getByText("Page 1 of 1", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Promote to admin", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "blogs.delete", exact: true })).not.toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "blogs.restore", exact: true })).not.toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "blogs.purge", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Delete stories", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Restore stories", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Permanently delete stories", exact: true })).not.toBeChecked();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Promote to admin", exact: true }).click();
-  await page.getByRole("checkbox", { name: "blogs.moderate", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Moderate stories", exact: true }).check();
   await page.getByRole("button", { name: "Save access", exact: true }).click();
   await expect(table.getByRole("button", { name: "Edit permissions", exact: true })).toBeVisible();
   await table.getByRole("button", { name: "Edit permissions", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "blogs.moderate", exact: true })).toBeChecked();
-  await page.getByRole("checkbox", { name: "blogs.moderate", exact: true }).uncheck();
+  await expect(page.getByRole("checkbox", { name: "Moderate stories", exact: true })).toBeChecked();
+  await page.getByRole("checkbox", { name: "Moderate stories", exact: true }).uncheck();
   await page.getByRole("button", { name: "Save access", exact: true }).click();
   await page.getByRole("button", { name: "Deactivate", exact: true }).click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(table.getByText("Inactive", { exact: true })).toBeVisible();
+  await expect(table.getByText("Deactivated", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Reactivate", exact: true }).click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(table.getByText("Active", { exact: true })).toBeVisible();
@@ -2521,6 +2521,62 @@ test("editorial articles preserve cover proportions and readable discussion acro
       }
     }
     await page.getByRole("link", { name: "Back to the journal", exact: false }).click();
-    await expect(page).toHaveURL(/\/#journal$/);
+    await expect(page).toHaveURL("/");
   }
+});
+
+
+test("user permissions stay local until saved and preserve additional server grants across themes and screens", async ({ page, request }) => {
+  await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate", "reports.view"] } });
+  await login(page, "admin@test.local");
+  await page.goto("/dashboard/admin/users");
+  const directory = page.getByRole("region", { name: "User management", exact: true });
+  await expect(directory.getByText("Total users", { exact: true })).toBeVisible();
+  await expect(directory.locator(".user-summary strong")).toHaveText("15");
+  await expect(directory.getByText("Active users", { exact: true })).toHaveCount(0);
+  await expect(directory.getByText("Administrators", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Search users", { exact: true }).fill("author@test.local");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(directory.getByText("Matching users", { exact: true })).toBeVisible();
+  await expect(directory.locator(".user-summary strong")).toHaveText("1");
+  const edit = directory.getByRole("button", { name: "Edit permissions", exact: true });
+  const patches = async () => ((await (await request.get(`${api}/__requests`)).json()) as { path: string; method: string }[]).filter(item => item.path.endsWith("/author/permissions") && item.method === "PATCH");
+  const before = (await patches()).length;
+  for (const width of [390, 820, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(edit).toBeVisible();
+    await edit.click();
+    const modal = page.getByRole("dialog", { name: "Access for Alex Writer", exact: true });
+    await expect(modal.getByRole("heading", { name: "Edit permissions", exact: true })).toBeVisible();
+    await expect(modal.getByRole("checkbox", { name: "Moderate stories", exact: true })).toBeChecked();
+    await expect(modal.getByRole("checkbox", { name: "reports.view", exact: true })).toBeChecked();
+    await expect(modal.getByRole("checkbox", { name: "reports.view", exact: true })).toBeDisabled();
+    await expect(modal.getByText("2 selected", { exact: true })).toBeVisible();
+    await modal.getByRole("checkbox", { name: "Delete stories", exact: true }).check();
+    await expect(modal.getByText("3 selected", { exact: true })).toBeVisible();
+    expect((await patches()).length).toBe(before);
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+      await modal.getByRole("checkbox", { name: "Manage users", exact: true }).scrollIntoViewIfNeeded();
+      const footer = (await modal.locator(".access-footer").boundingBox())!;
+      expect(footer.y + footer.height).toBeLessThanOrEqual(801);
+      expect((await modal.boundingBox())!.width).toBeLessThanOrEqual(Math.min(width - 32, 580));
+      expect(await modal.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: test.info().outputPath(`user-access-${width}-${theme}.png`) });
+    }
+    await modal.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(modal).toHaveCount(0);
+  }
+  await edit.click();
+  const modal = page.getByRole("dialog", { name: "Access for Alex Writer", exact: true });
+  await expect(modal.getByRole("checkbox", { name: "Delete stories", exact: true })).not.toBeChecked();
+  const saved = page.waitForRequest(request => request.method() === "PATCH" && request.url().endsWith("/author/permissions"));
+  await modal.getByRole("button", { name: "Save access", exact: true }).click();
+  expect((await saved).postDataJSON()).toEqual({ permissions: ["blogs.moderate", "reports.view"] });
+  await expect(modal).toHaveCount(0);
+  await edit.click();
+  await expect(modal.getByRole("checkbox", { name: "reports.view", exact: true })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(modal).toHaveCount(0);
 });

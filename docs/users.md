@@ -45,3 +45,12 @@ Sign in as an administrator, search for a user, navigate pages, cancel/confirm a
 Related: [Authentication](auth.md), [Routing and shared state](README.md).
 
 Permission updates use `PATCH /admin/users/:id/permissions` with the selected grants. An empty array revokes all grants.
+
+
+## User-management interface
+
+The user directory reuses the existing RTK Query list and update mutation. Its summary shows the server's total, labelled Matching users while searching. Active-user and administrator summary cards are omitted because this paginated API has no aggregate counts for them. The table becomes stacked rows on smaller screens while keeping identity, registration date, role, status, protected-state information, and actions visible.
+
+The existing native access dialog groups assignable permission keys under human-readable labels and descriptions. Selection stays local until Save access; Cancel and Escape discard edits. Promotion still starts with no selected grants. Existing unknown server grants appear in an additional read-only group and are preserved in the save payload, rather than being silently dropped. They do not become newly assignable permissions.
+
+FAQ descriptions are intentionally generic: the local backend checkout predates the newer permission contract. Existing frontend grant keys and documented restrictions remain unchanged. The dialog does not create an FAQ administration feature or broaden authorization.

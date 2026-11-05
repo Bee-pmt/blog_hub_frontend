@@ -51,7 +51,7 @@ async function Article({ params }: ModulePageProps) {
   }
   return (
     <article className="article">
-      <Link className="text-link muted article-back" href="/#journal">
+      <Link className="text-link muted article-back" href="/">
         <ArrowLeft size={17} aria-hidden="true" /> Back to the journal
       </Link>
       <header className="article-header">

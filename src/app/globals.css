@@ -2349,3 +2349,78 @@ body:has(.feed-editor[open]) { overflow: hidden; }
   .article .comment-row { column-gap: 0.5rem; }
   .article .comment-row > .comment-replies { grid-column: 1 / -1; }
 }
+
+/* User administration keeps the existing grants and account controls. */
+.user-management .section-heading { margin-bottom: 0.5rem; }
+.user-management .users-description { margin: 0 0 1.5rem; }
+.user-summary { display: flex; align-items: center; gap: 1rem; width: fit-content; min-width: 180px; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 0.85rem; background: var(--surface); }
+.user-summary > svg { color: var(--muted); }
+.user-summary span { display: block; font-size: 0.75rem; color: var(--muted); }
+.user-summary strong { display: block; font-size: 1.6rem; font-weight: 650; line-height: 1.4; }
+.user-management .user-search { gap: 0.65rem; padding: 0.85rem; margin-bottom: 1.5rem; }
+.user-search label { position: relative; }
+.user-search label > svg { position: absolute; left: 0.9rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.user-search .form-control { margin: 0; padding-left: 2.6rem; border-radius: 0.65rem; min-height: 44px; }
+.user-management .button { min-height: 44px; border-radius: 0.65rem; padding: 0.6rem 0.85rem; gap: 0.4rem; font-size: 0.8rem; }
+.user-management .user-table-wrap { border-radius: 0.85rem; background: var(--surface); }
+.user-table th, .user-table td { padding: 1.1rem 1rem; }
+.user-table thead th { font-size: 0.7rem; font-weight: 550; color: var(--muted); white-space: nowrap; }
+.user-table tbody tr:hover { background: var(--subtle); }
+.user-table tbody tr:last-child > * { border-bottom: 0; }
+.managed-user-identity { display: flex; align-items: center; gap: 0.75rem; }
+.managed-user-identity > div { min-width: 0; }
+.managed-avatar { display: grid; place-items: center; flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--subtle); color: var(--foreground); border: 1px solid var(--border); font-size: 0.9rem; font-weight: 600; }
+.user-self { font-size: 0.7rem; color: var(--muted); font-weight: 400; }
+.user-table .user-email { font-size: 0.75rem; margin-top: 0.3rem; }
+.user-role-badge, .user-status-badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.6rem; border: 1px solid var(--border); border-radius: 2rem; background: var(--input-surface); font-size: 0.7rem; white-space: nowrap; }
+.user-status-badge > span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.user-status-badge[data-active="false"] { color: var(--muted); background: var(--subtle); }
+.user-status-badge[data-active="false"] > span { background: transparent; border: 1px solid currentColor; }
+.user-table .actions { flex-wrap: wrap; gap: 0.5rem; }
+.user-table button[data-disabling="true"] { border-color: var(--muted); border-style: dashed; }
+.protected-account { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.75rem; }
+.access-dialog { width: 580px; max-width: calc(100% - 2rem); max-height: calc(100dvh - 2rem); padding: 0; border-radius: 1rem; overflow: hidden; }
+.access-dialog > form { display: flex; flex-direction: column; max-height: calc(100dvh - 2rem); }
+.access-header { padding: 1.5rem 1.5rem 1rem; border-bottom: 1px solid var(--border); }
+.access-dialog h2 { margin: 0 0 0.35rem; font-size: 1.4rem; font-weight: 650; }
+.access-dialog .access-header > p { font-size: 0.85rem; margin: 0 0 1rem; }
+.access-account { display: flex; align-items: center; gap: 0.75rem; }
+.access-account > div { display: grid; justify-items: start; gap: 0.35rem; min-width: 0; }
+.access-account strong { font-size: 0.9rem; overflow-wrap: anywhere; }
+.selected-permissions { margin-left: auto; font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+.permission-groups { overflow-y: auto; min-height: 0; padding: 1rem 1.5rem; }
+.access-dialog .access-help { font-size: 0.75rem; margin: 0 0 1rem; }
+.permission-group { border: 1px solid var(--border); border-radius: 0.8rem; padding: 0.5rem; margin-bottom: 1rem; min-width: 0; }
+.permission-group legend { padding: 0 0.5rem; font-size: 0.8rem; font-weight: 600; }
+.permission-group legend svg { display: inline-block; vertical-align: middle; margin-right: 0.5rem; }
+.access-dialog .permission-option { align-items: flex-start; padding: 0.75rem; border-radius: 0.6rem; cursor: pointer; }
+.access-dialog .permission-option:hover, .access-dialog .permission-option:has(input:checked) { background: var(--subtle); }
+.access-dialog .permission-option:has(input:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 1px; }
+.access-dialog .permission-option input { margin-top: 0.2rem; accent-color: var(--foreground); }
+.permission-copy { display: grid; gap: 0.25rem; min-width: 0; font-size: 0.75rem; color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
+.permission-copy strong { font-size: 0.85rem; color: var(--foreground); font-weight: 550; }
+.permission-copy code { font-size: 0.65rem; }
+.permission-note { display: flex; align-items: start; gap: 0.4rem; margin-top: 0.25rem; }
+.permission-note svg { flex-shrink: 0; margin-top: 0.2rem; }
+.access-footer { flex-shrink: 0; padding: 1rem 1.5rem; border-top: 1px solid var(--border); background: var(--surface); }
+.access-footer .actions { justify-content: flex-end; gap: 0.65rem; }
+.access-footer .button { min-height: 44px; border-radius: 0.65rem; font-size: 0.8rem; padding: 0.65rem 1rem; }
+.access-dialog .access-footer .notice { margin: 0 0 0.75rem; font-size: 0.8rem; }
+@media (max-width: 1100px) {
+  .user-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .user-table, .user-table tbody { display: block; }
+  .user-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 1rem; gap: 1rem; border-bottom: 1px solid var(--border); }
+  .user-table tbody tr:last-child { border: 0; }
+  .user-table tbody th, .user-table tbody td { display: block; padding: 0; border: 0; min-width: 0; }
+  .user-table tbody th, .user-table tbody td:last-child { grid-column: 1 / -1; }
+  .user-table td::before { content: attr(data-label); display: block; font-size: 0.65rem; color: var(--muted); margin-bottom: 0.4rem; }
+}
+@media (max-width: 600px) {
+  .user-management .user-search label { flex-basis: 100%; }
+  .user-search > .button { flex: 1; }
+  .access-header, .access-footer { padding: 1rem; }
+  .permission-groups { padding: 1rem; }
+  .access-dialog .permission-option { padding: 0.75rem 0.5rem; }
+  .access-account { flex-wrap: wrap; }
+  .selected-permissions { margin-left: 0; }
+}
