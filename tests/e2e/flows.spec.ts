@@ -2494,14 +2494,31 @@ test("editorial articles preserve cover proportions and readable discussion acro
     const blog = await response.json();
     await request.post(`${api}/__comment-fixtures`, { data: { items: [{ ...commentFixture("editorial-comment", "A thoughtful comment that remains readable."), blogId: blog.id }] } });
     await page.goto(`/blogs/${blog.slug}`);
-    for (const width of [390, 820, 1440]) {
+    for (const width of [390, 820, 1280, 1440, 1920]) {
       await page.setViewportSize({ width, height: 1000 });
       const article = page.locator(".article");
-      expect((await article.boundingBox())!.width).toBeLessThanOrEqual(780);
+      const card = (await article.boundingBox())!;
+      const region = (await page.locator(".site-main").boundingBox())!;
+      expect(card.width).toBeLessThanOrEqual(920);
+      expect(Math.abs(card.x + card.width / 2 - region.x - region.width / 2)).toBeLessThan(1);
+      if (width >= 1440) {
+        expect(card.width).toBe(920);
+        const sidebar = (await page.getByRole("complementary", { name: "Sidebar", exact: true }).boundingBox())!;
+        expect(sidebar.width).toBe(240);
+        expect(region.x - sidebar.x - sidebar.width).toBe(32);
+      }
+      const body = (await article.locator(":scope > .prose").boundingBox())!;
+      expect(body.width).toBeLessThanOrEqual(740);
+      for (const selector of [".article-back", ".article-header", ":scope > .reaction-controls", ".comment-section"]) {
+        const section = (await article.locator(selector).boundingBox())!;
+        expect(Math.abs(section.x - body.x)).toBeLessThan(1);
+        expect(Math.abs(section.width - body.width)).toBeLessThan(1);
+      }
       const cover = page.locator(".article-cover");
       await cover.scrollIntoViewIfNeeded();
       await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(imageWidth);
       const box = (await cover.boundingBox())!;
+      expect(box.width).toBeLessThanOrEqual(840);
       expect(Math.abs(box.width / box.height - imageWidth / imageHeight)).toBeLessThan(0.01);
       await expect(cover).toHaveCSS("object-fit", "contain");
       await expect(cover).toHaveAttribute("loading", "lazy");

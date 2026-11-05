@@ -2294,8 +2294,9 @@ body:has(.feed-editor[open]) { overflow: hidden; }
 
 /* Editorial styles stay local to the public story, including its discussion. */
 .article-page { padding-block: 2rem 4rem; }
-.article { max-width: 780px; padding: clamp(1.1rem, 3vw, 2.5rem); background: var(--surface); border-radius: 1rem; }
-.article-back { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; font-size: 0.8rem; }
+.article { max-width: 920px; padding: clamp(1.1rem, 3vw, 2.5rem); background: var(--surface); border-radius: 1rem; }
+.article > :not(.article-cover) { width: 100%; max-width: 740px; margin-inline: auto; }
+.article-back { display: flex; align-items: center; gap: 0.5rem; min-height: 44px; font-size: 0.8rem; }
 .article-header { margin-block: 1.25rem 2rem; }
 .article-header h1 { font-size: clamp(2rem, 4.5vw, 3.5rem); line-height: 1.12; letter-spacing: -0.04em; margin: 0 0 1.5rem; text-wrap: pretty; }
 .article-author { align-items: center; gap: 0.85rem; }
@@ -2307,7 +2308,7 @@ body:has(.feed-editor[open]) { overflow: hidden; }
 .article-category:hover { text-decoration: underline; }
 .article .tag-list { gap: 0.5rem; margin-top: 1.25rem; }
 .article .tag { padding: 0.35rem 0.7rem; font-size: 0.7rem; }
-.article .article-cover { width: 100%; height: auto; object-fit: contain; margin: 0 auto 2rem; border-radius: 0.75rem; }
+.article .article-cover { width: 100%; max-width: 840px; height: auto; object-fit: contain; margin: 0 auto 2rem; border-radius: 0.75rem; }
 .article .article-cover.image-fallback { min-height: 180px; }
 .article .prose { font-size: clamp(1.0625rem, 1.5vw, 1.125rem); line-height: 1.78; }
 .article .prose > :first-child { margin-top: 0; }
@@ -2423,4 +2424,8 @@ body:has(.feed-editor[open]) { overflow: hidden; }
   .access-dialog .permission-option { padding: 0.75rem 0.5rem; }
   .access-account { flex-wrap: wrap; }
   .selected-permissions { margin-left: 0; }
+}
+
+@media (min-width: 1024px) {
+  .site-content:has(.article-page) { column-gap: 2rem; }
 }
