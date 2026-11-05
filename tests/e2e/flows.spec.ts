@@ -2436,3 +2436,45 @@ test("feed discovery, compact filters and mobile menu preserve the existing jour
   await expect(sidebar.locator(".sidebar-user")).not.toHaveAttribute("open", "");
   await expect(profile).toBeFocused();
 });
+
+
+test("header shares the responsive content edges and light surfaces preserve dark mode", async ({ page }) => {
+  await login(page);
+  await page.goto("/");
+  const sidebar = page.getByRole("complementary", { name: "Sidebar", exact: true });
+  for (const width of [360, 820, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const logo = await page.getByRole("link", { name: "BlogHub home", exact: true }).boundingBox();
+    const aside = await sidebar.boundingBox();
+    const nav = await page.getByRole("navigation", { name: "Main navigation", exact: true }).boundingBox();
+    const content = await page.locator(".site-content").boundingBox();
+    expect(Math.abs(logo!.x - aside!.x)).toBeLessThan(1);
+    expect(Math.abs(nav!.x + nav!.width - content!.x - content!.width)).toBeLessThan(1);
+    if (width >= 1360) {
+      const discovery = await page.locator(".discovery-card").first().boundingBox();
+      expect(Math.abs(nav!.x + nav!.width - discovery!.x - discovery!.width)).toBeLessThan(1);
+    }
+    if (width === 360) expect(Math.abs(logo!.y + logo!.height / 2 - nav!.y - nav!.height / 2)).toBeLessThan(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await openSidebar(page);
+  const messages = sidebar.getByRole("link", { name: /^Messages/ });
+  const stories = sidebar.getByRole("link", { name: "My Stories", exact: true });
+  expect((await messages.locator("span").first().boundingBox())!.x).toBe((await stories.locator("span").first().boundingBox())!.x);
+  expect(await messages.evaluate(element => getComputedStyle(element).justifyContent)).not.toBe("space-between");
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  for (const [theme, colors] of [["light", ["rgb(255, 255, 255)", "rgb(247, 247, 248)", "rgb(255, 255, 255)"]], ["dark", ["rgb(20, 21, 23)", "rgb(28, 28, 28)", "rgb(28, 28, 28)"]]] as const) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    await expect(page.locator("body")).toHaveCSS("background-color", colors[0]);
+    await expect(page.locator(".site-header")).toHaveCSS("background-color", colors[0]);
+    for (const selector of [".workspace-sidebar", ".feed-card", ".feed-search", ".discovery-card"])
+      await expect(page.locator(selector).first()).toHaveCSS("background-color", colors[1]);
+    await expect(page.getByLabel("Search stories", { exact: true })).toHaveCSS("background-color", colors[2]);
+    await expect(page.getByLabel("Author", { exact: true })).toHaveCSS("background-color", colors[2]);
+    await page.screenshot({ path: test.info().outputPath(`header-surfaces-${theme}.png`) });
+  }
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "system"; });
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(20, 21, 23)");
+  await expect(page.getByLabel("Search stories", { exact: true })).toHaveCSS("background-color", "rgb(28, 28, 28)");
+});
