@@ -1,10 +1,11 @@
 "use client";
 
 import type { Blog, BlogPage, BlogSummary, Filters } from "@/modules/blogs/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/lib/store/hooks";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { SquarePen } from "lucide-react";
 import { toast } from "sonner";
 import { dateLabel, queryString } from "@/lib/utils";
 import { queryError } from "@/lib/api/baseApi";
@@ -87,10 +88,12 @@ function FeedPost({ post }: { post: BlogSummary }) {
   );
 }
 
-export default function PostList({ data: initial, filters, startWriting = false }: {
+export default function PostList({ data: initial, filters, startWriting = false, children, discovery }: {
   data: BlogPage;
   filters: Filters;
   startWriting?: boolean;
+  children?: ReactNode;
+  discovery?: ReactNode;
 }) {
   const { user, loading, error: sessionError, restore } = useAuth();
   const store = useAppStore();
@@ -118,12 +121,12 @@ export default function PostList({ data: initial, filters, startWriting = false 
   useEffect(() => {
     const panel = editorSection.current;
     const header = document.querySelector(".site-header");
-    const feedPage = sentinel.current?.closest<HTMLElement>(".feed-page");
-    if (!header || !feedPage) return;
+    const feedMain = sentinel.current?.closest<HTMLElement>(".feed-main");
+    if (!header || !feedMain) return;
     const fitPanel = () => {
-      const bounds = feedPage.getBoundingClientRect();
-      feedPage.style.setProperty("--feed-center", `${bounds.left + bounds.width / 2}px`);
-      feedPage.style.setProperty("--feed-width", `${bounds.width}px`);
+      const bounds = feedMain.getBoundingClientRect();
+      feedMain.style.setProperty("--feed-center", `${bounds.left + bounds.width / 2}px`);
+      feedMain.style.setProperty("--feed-width", `${bounds.width}px`);
       panel?.style.setProperty("--editor-top", `${header.getBoundingClientRect().bottom}px`);
       panel?.style.setProperty("--editor-width", `${bounds.width}px`);
       panel?.style.setProperty("--editor-left", `${bounds.left}px`);
@@ -132,7 +135,7 @@ export default function PostList({ data: initial, filters, startWriting = false 
     if (editor && userId && panel && !panel.open) panel.showModal();
     const observer = new ResizeObserver(fitPanel);
     observer.observe(header);
-    observer.observe(feedPage);
+    observer.observe(feedMain);
     return () => observer.disconnect();
   }, [editor, userId]);
 
@@ -156,7 +159,14 @@ export default function PostList({ data: initial, filters, startWriting = false 
   }
 
   return (
-    <>
+    <div className="feed-layout">
+      <div className="feed-main">
+        <div className="feed-heading">
+          <div><p className="eyebrow">The journal</p><h1>Explore Stories</h1><p className="muted">Discover ideas, experiences, and stories.</p></div>
+          {user ? <button className="button button-primary feed-write-button" type="button" disabled={loading} onClick={event => { writeButton.current = event.currentTarget; setEditor({}); }}><SquarePen size={17} aria-hidden="true" />Write a Story</button>
+            : <Link className="button button-primary feed-write-button" href={`/login?returnTo=${encodeURIComponent("/?write=1#feed-editor")}`}><SquarePen size={17} aria-hidden="true" />Write a Story</Link>}
+        </div>
+        {children}
       {editor && user && <dialog ref={editorSection} id="feed-editor" className="feed-editor" aria-label="Write blog" onCancel={(event) => {
         event.preventDefault();
         editorSection.current?.querySelector<HTMLButtonElement>("[data-leave-editor]")?.click();
@@ -181,9 +191,11 @@ export default function PostList({ data: initial, filters, startWriting = false 
       {sessionError && <p className="notice" role="alert">{sessionError}{" "}<button className="text-link" onClick={() => void restore()}>Retry session check</button></p>}
       {(!editor || !user) && <div className="feed-composer">
         <span className="feed-avatar" aria-hidden="true">{Array.from(user?.displayName.trim() || "B")[0]?.toLocaleUpperCase()}</span>
-        {user ? <button ref={writeButton} type="button" disabled={loading} onClick={() => setEditor({})}>Write blog <span aria-hidden="true">↗</span></button>
+        {user ? <button type="button" disabled={loading} onClick={event => { writeButton.current = event.currentTarget; setEditor({}); }}>Write blog <span aria-hidden="true">↗</span></button>
           : <Link href={`/login?returnTo=${encodeURIComponent("/?write=1#feed-editor")}`}>Write blog <span aria-hidden="true">↗</span></Link>}
       </div>}
-    </>
+      </div>
+      {discovery}
+    </div>
   );
 }

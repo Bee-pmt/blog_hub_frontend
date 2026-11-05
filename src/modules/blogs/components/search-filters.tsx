@@ -2,7 +2,8 @@
 import type { Category, Tag } from "@/modules/taxonomy/types";
 import type { Filters } from "@/modules/blogs/types";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { queryString } from "@/lib/utils";
@@ -20,6 +21,8 @@ export default function SearchFilters({
   filters,
 }: SearchFiltersProps) {
   const router = useRouter();
+  const filtersId = useId();
+  const [expanded, setExpanded] = useState(!!(filters.category || filters.tag || filters.author));
   const [category, setCategory] = useState(filters.category || "");
   const [tag, setTag] = useState(filters.tag || "");
   const searchForm = useRef<HTMLFormElement>(null);
@@ -41,7 +44,7 @@ export default function SearchFilters({
   return (
     <form
       ref={searchForm}
-      className="search-form"
+      className="search-form feed-search"
       onSubmit={handleSearch}
     >
       <div className="search-primary">
@@ -76,10 +79,12 @@ export default function SearchFilters({
           }}
         />
         <button className="button button-primary" type="submit">
-          Search <span aria-hidden="true">↗</span>
+          Search
         </button>
+        <button className="button button-secondary filters-toggle" type="button" aria-expanded={expanded} aria-controls={filtersId}
+          onClick={() => setExpanded(value => !value)}><SlidersHorizontal size={18} aria-hidden="true" />Filters</button>
       </div>
-      <div className="search-refinements">
+      <div className="search-refinements" id={filtersId} hidden={!expanded}>
         <label>
           Category
           <select

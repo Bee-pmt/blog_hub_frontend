@@ -17,9 +17,9 @@ Source: [`src/modules/base`](../src/modules/base). This module contains shared i
 
 `src/app/layout.tsx` gathers navigation items from manifests and passes them to `WorkspaceSidebar`. `moduleRegistry.tsx` wraps protected pages in `DashboardShell`, which waits for session restoration, shows errors, redirects guests, and checks the route permission. NestJS remains the authority for protected data.
 
-The sidebar is always visible beside the content on desktop, with no header icon or modal. On screens up to 1000px wide it sits above the content and its links wrap. Visitors see only Log in and Sign up; signed-in users see permission-filtered workspace links. Normal page scrolling and keyboard navigation remain available.
+The sidebar stays beside content on desktop and tablet. At 760px or below, a labelled Menu button expands the navigation above the single-column content. Workspace and Administration groups use Lucide icons, with active links and keyboard focus states. Administration entries still use the existing effective-permission checks; guests see only Log in and Sign up.
 
-The sidebar places the notification bell and settings link beside the account name. The Messages link renders the chat module’s shared unread badge; see [Chat](chat.md#messages-sidebar-badge). Sign-out calls the existing authentication action. The shell does not fetch or own story, taxonomy, or chat data.
+The notification bell remains in the sidebar heading. The Messages link retains the shared unread badge. The bottom account menu shows the avatar, name, and role; Profile opens the existing `/dashboard`, Settings opens `/settings`, and Sign out calls the existing authentication action. Escape closes the menu and returns focus to its summary. No new profile route or authentication flow was added.
 
 The root page layout, global header/footer, and Redux provider live outside this module, in `src/app/layout.tsx` and `src/lib/ReduxProvider.tsx`.
 

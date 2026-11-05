@@ -5,14 +5,20 @@ const api = "http://localhost:5301/api/v1";
 async function openSidebar(page: Page) {
   const sidebar = page.getByRole("complementary", { name: "Sidebar", exact: true });
   await expect(sidebar).toBeVisible();
+  const toggle = sidebar.getByRole("button", { name: "Menu", exact: true });
+  if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
   return sidebar;
 }
 async function clickWorkspaceLink(page: Page, name: string | RegExp) {
   const sidebar = await openSidebar(page);
-  await sidebar.getByRole("link", { name, exact: true }).click();
+  const labels: Record<string, string> = { "Users · Admin": "Manage Users", "All stories · Admin": "All Stories" };
+  if (name === "Account settings") await sidebar.locator("summary[aria-label='Account menu']").click();
+  const label = typeof name === "string" ? new RegExp(`^${labels[name] || name}$`, "i") : name;
+  await sidebar.getByRole("link", { name: label, exact: true }).click();
 }
 async function signOut(page: Page) {
   const sidebar = await openSidebar(page);
+  if (!await sidebar.locator(".sidebar-user").evaluate(element => element.hasAttribute("open"))) await sidebar.locator("summary[aria-label='Account menu']").click();
   await sidebar.getByRole("button", { name: "Sign out", exact: true }).click();
 }
 async function expectUnreadCount(page: Page, count: string) {
@@ -41,7 +47,7 @@ test("new Google users set a password before creation and can later use password
   await page.getByRole("button", { name: "Create account and sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await openSidebar(page);
-  await expect(page.getByRole("heading", { name: "Google Writer", exact: true })).toBeVisible();
+  await expect(page.locator(".sidebar-user-info strong").filter({ hasText: "Google Writer" })).toBeVisible();
   expect((await page.context().cookies()).some(cookie => cookie.name === "bloghub_google")).toBe(false);
   await signOut(page);
   await expect(page).toHaveURL(/\/login/);
@@ -164,11 +170,12 @@ test("register, sign in, reload session and sign out", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Profile", exact: true })).toHaveText("N");
   await expect(page.getByRole("dialog", { name: "Sidebar", exact: true })).not.toBeVisible();
   await openSidebar(page);
+  await page.locator("summary[aria-label='Account menu']").click();
   await expect(page.locator(".dashboard-sidebar").getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
   await page.reload();
   await openSidebar(page);
   await expect(
-    page.getByRole("heading", { name: "New Writer", exact: true }),
+    page.locator(".sidebar-user-info strong").filter({ hasText: "New Writer" }),
   ).toBeVisible();
   await signOut(page);
   await expect(page).toHaveURL(/\/login\?returnTo=/);
@@ -577,6 +584,7 @@ test("settings changes passwords, preserves incorrect-password sessions, and sig
   const otherTab = await context.newPage();
   await otherTab.goto("/dashboard");
   await openSidebar(otherTab);
+  await otherTab.locator("summary[aria-label='Account menu']").click();
   await expect(otherTab.getByRole("link", { name: "Account settings" })).toBeVisible();
   await clickWorkspaceLink(page, "Account settings");
   await expect(page).toHaveURL(/\/settings$/);
@@ -672,7 +680,7 @@ test("admin user management searches, paginates, confirms role changes and manag
 
 test("authors cannot access user management", async ({ page }) => {
   await login(page);
-  await expect(page.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Manage Users", exact: true })).toHaveCount(0);
   await page.goto("/dashboard/admin/users");
   await expect(page.getByRole("heading", { name: "You do not have permission to open this workspace." })).toBeVisible();
   await expect(page.locator(".user-table:visible")).toHaveCount(0);
@@ -843,7 +851,7 @@ test("RTK Query clears private lists when signing out and switching accounts", a
   await expect(page).toHaveURL(/\/dashboard\/posts\/story-1\/edit$/);
   await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
   await openSidebar(page);
-  await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
+  await expect(page.locator(".sidebar-user-info strong")).toHaveText("Other Writer");
   // Sign-in returns to the old editor URL; it must not reuse the previous owner's detail.
   await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
   await clickWorkspaceLink(page, "My stories");
@@ -867,7 +875,7 @@ test("notifications show relative times, paginate, mark read, and keep recipient
   const bell = page.getByRole("link", { name: "Notifications, 12 unread", exact: true });
   await expect(bell).toBeVisible();
   const settings = page.getByRole("link", { name: "Account settings", exact: true });
-  expect(await bell.evaluate((element) => element.parentElement === document.querySelector('.sidebar-settings-button[href="/settings"]')?.parentElement)).toBe(true);
+  await page.locator("summary[aria-label='Account menu']").click();
   await expect(settings).toBeVisible();
   await openSidebar(page);
   await bell.click();
@@ -988,6 +996,7 @@ for (const apiName of ["SpeechRecognition", "webkitSpeechRecognition"]) {
   test(`voice search fills the existing input and submits current filters using ${apiName}`, async ({ page }) => {
     await mockVoiceSearch(page, apiName);
     await page.goto("/?page=2#journal");
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
     await page.getByRole("combobox", { name: "Category", exact: true }).selectOption("ideas");
     await page.getByRole("combobox", { name: "Tag", exact: true }).selectOption("thinking");
     await page.getByLabel("Search stories", { exact: true }).fill("Replace this");
@@ -2133,7 +2142,7 @@ test("feed owns post menus and refreshes all loaded pages after unpublishing and
 test("feed opens the existing editor upward and preserves draft and leave protections", async ({ page }) => {
   await login(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Write blog", exact: false }).click();
+  await page.getByRole("button", { name: "Write a Story", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Write blog", exact: true });
   await expect(editor.getByRole("heading", { name: "Write your story", exact: true })).toBeInViewport();
   expect(new URL(page.url()).pathname).toBe("/");
@@ -2146,7 +2155,7 @@ test("feed opens the existing editor upward and preserves draft and leave protec
       return Math.abs(panel!.y - header!.y - header!.height);
     }).toBeLessThan(2);
     const panel = await editor.boundingBox();
-    const feed = await page.locator(".feed-page").boundingBox();
+    const feed = await page.locator(".feed-main").boundingBox();
     expect(Math.abs(panel!.width - feed!.width)).toBeLessThan(2);
     expect(Math.abs(panel!.x - feed!.x)).toBeLessThan(2);
   }
@@ -2337,21 +2346,23 @@ test("built-in sidebar preserves permissions and responsive layouts", async ({ p
   const sidebar = await openSidebar(page);
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    await openSidebar(page);
     await expect(sidebar.getByRole("link", { name: "My Trash", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
-    await expect(sidebar.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
+    await expect(sidebar.getByRole("link", { name: "Manage Users", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (width === 1440) {
       const aside = await sidebar.boundingBox();
-      const feed = await page.locator(".feed-page").boundingBox();
+      const feed = await page.locator(".feed-main").boundingBox();
       expect(aside!.x + aside!.width).toBeLessThan(feed!.x);
-      expect(feed!.width).toBe(850);
+      expect(feed!.width).toBeGreaterThan(500);
+      await expect(page.getByRole("complementary", { name: "Discover more" })).toBeVisible();
     }
     await page.screenshot({ path: test.info().outputPath(`built-in-sidebar-${width}.png`), fullPage: true });
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await page.screenshot({ path: test.info().outputPath("built-in-sidebar-dark.png") });
-  await sidebar.getByRole("link", { name: "My stories", exact: true }).click();
+  await sidebar.getByRole("link", { name: "My Stories", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(sidebar).toBeVisible();
 });
@@ -2377,4 +2388,51 @@ test("article card contrast, circular avatar and comment action count stay corre
   await page.setViewportSize({ width: 390, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath("article-mobile.png"), fullPage: true });
+});
+
+
+test("feed discovery, compact filters and mobile menu preserve the existing journeys", async ({ page }) => {
+  await page.goto("/");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByRole("heading", { name: "Explore Stories", exact: true })).toBeVisible();
+  const discovery = page.getByRole("complementary", { name: "Discover more" });
+  await expect(discovery.getByRole("heading", { name: "Recently published" })).toBeVisible();
+  await expect(discovery.locator(".recent-stories li")).toHaveCount(3);
+  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  await expect(filters).toHaveAttribute("aria-expanded", "false");
+  await filters.click();
+  await page.getByLabel("Author", { exact: true }).fill("Alex");
+  await filters.click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/author=Alex/);
+  await expect(page.getByLabel("Author", { exact: true })).toHaveValue("Alex");
+  await page.getByRole("link", { name: /Clear filters/ }).click();
+  await expect(page).not.toHaveURL(/author=/);
+  for (const width of [390, 820, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width < 1360) await expect(discovery).toBeHidden();
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+      const card = page.locator(".feed-card").first();
+      expect(await card.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(await page.locator("body").evaluate(element => getComputedStyle(element).backgroundColor));
+      await page.screenshot({ path: test.info().outputPath(`feed-${width}-${theme}.png`), fullPage: true });
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 900 });
+  const sidebar = page.getByRole("complementary", { name: "Sidebar", exact: true });
+  const menu = sidebar.getByRole("button", { name: "Menu", exact: true });
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await menu.click();
+  await sidebar.getByRole("link", { name: "Log in", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await login(page);
+  await openSidebar(page);
+  const profile = sidebar.locator("summary[aria-label='Account menu']");
+  await profile.click();
+  await expect(sidebar.getByRole("link", { name: "Account settings" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sidebar.locator(".sidebar-user")).not.toHaveAttribute("open", "");
+  await expect(profile).toBeFocused();
 });

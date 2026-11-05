@@ -13,10 +13,10 @@ Source: [`src/modules/website`](../src/modules/website). This module renders the
 
 ## Home page data flow
 
-1. `Home` renders the Feeds heading and a Suspense boundary around `Journal`.
+1. `Home` renders a Suspense boundary around `Journal`; the existing `PostList` displays Explore Stories and its writing CTA.
 2. `Journal` reads and bounds `q`, `category`, `tag`, and `author` from the URL.
 3. It loads `getCachedBlogs({ ...filters, page: 1, limit: 9 })` and
-   `getCachedTaxonomy()` in parallel. Public Next.js caching still serves this
+   `getCachedTaxonomy()`, and three unfiltered recently published stories in parallel. Public Next.js caching still serves this
    first page; no access token enters those cache functions.
 4. `PostList` seeds the existing RTK Query store with the server's first page,
    without fetching it again. A previously cached feed is reused instead.
@@ -34,13 +34,13 @@ Voice search continues to use the same URL-based search submission.
 
 ## Feed controls and writing
 
-Cards use light gray surfaces with dark-theme equivalents,
+Cards use neutral theme surfaces with dark-theme equivalents,
 initial avatars, the existing single cover image, and Like/Dislike/Comment actions.
 Comment opens the existing article's comments section. Only the signed-in author
 sees the two-dot menu: Edit opens the existing editor route; Delete confirms before
 removing; Unpublish returns the story to drafts. NestJS still checks ownership.
 
-The bottom Write blog bar opens the existing `PostEditor` in a feed-width panel
+The header Write a Story button and bottom Write blog bar open the existing `PostEditor` in a feed-width panel
 that slides upward from the bottom and stops below the header without scrolling the feed. Its bundle is loaded on
 demand. Visitors sign in first and return via `/?write=1#feed-editor`.
 
@@ -82,6 +82,10 @@ Do not pass an application access token or private dashboard response into these
 
 Related: [Stories](blog.md), [Taxonomy](taxonomy.md), [Base UI and voice input](base.md).
 
-The shared sidebar is built into the page beside the 850px feed on desktop, and above it on smaller screens. There is no sidebar toggle icon. The page background is darker gray, while cards and the writing form remain lighter. See [Base UI](base.md) for navigation and accessibility behavior.
+The desktop feed uses the existing shared left sidebar. At 1360px and above, a right discovery column shows up to eight real categories and three recent public stories. Below that breakpoint discovery is hidden; below 761px navigation becomes collapsible. No trending, suggested writers, bookmarks, or Following controls were added because the application has no supporting functionality.
+
+The search row keeps text and voice input. Filters expands category, tag, author, and Clear filters. Active advanced URL filters start expanded; collapsing leaves their values in the form so searching or voice submission still includes them. Existing query parameters and APIs are unchanged.
+
+Global theme tokens provide a soft neutral page background, contrasting cards, pills, compact inputs, and focus states. The inline editor and writing bar are measured against the main feed column, excluding discovery, and remain aligned below the header. Lucide React is the only added dependency, used for the requested navigation icons and compact filter/writing controls. No duplicate reusable components were introduced.
 
 Article cards have a lighter gray surface than the page background and circular colored author initials. The Comment action shows the backend’s top-level comment total using the existing first-page RTK Query cache, shared with the comments section. Counts refresh after comment mutations; replies retain their separate counts.
