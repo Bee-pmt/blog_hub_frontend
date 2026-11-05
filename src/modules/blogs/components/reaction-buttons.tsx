@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import { queryError } from "@/lib/api/baseApi";
 import type { ReactionSummary, ReactionType } from "../types";
-import { useGetReactionsQuery, useReactMutation } from "../store/services/commentApi";
+import { useGetCommentsQuery, useGetReactionsQuery, useReactMutation } from "../store/services/commentApi";
 
 type Props = {
   kind: "blogs" | "comments";
@@ -27,6 +27,9 @@ function Reactions({ kind, id, totals, accountId, sessionLoading, commentHref = 
   const { currentData, error: loadError, isFetching, refetch } = useGetReactionsQuery(
     { kind, id, accountId },
     { skip: sessionLoading || (!accountId && !!totals), refetchOnMountOrArgChange: true },
+  );
+  const { currentData: comments, error: commentError, refetch: refreshComments } = useGetCommentsQuery(
+    { blogId: id, page: 1 }, { skip: kind !== "blogs" },
   );
   const [react, { isLoading }] = useReactMutation();
   const summary = currentData ?? (!accountId && totals ? { ...totals, myReaction: null } : undefined);
@@ -91,11 +94,14 @@ function Reactions({ kind, id, totals, accountId, sessionLoading, commentHref = 
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-9.5A8.5 8.5 0 0 1 10.5 4H13a8 8 0 0 1 8 7.5Z" />
             </svg>
-            <span>Comment</span>
+            <span>Comment ({comments?.total ?? (commentError ? "?" : "…")})</span>
           </a>
         )}
       </div>
       {(sessionLoading || isFetching || isLoading) && <p className="field-help" role="status">{isLoading ? "Saving reaction…" : "Loading reactions…"}</p>}
+      {kind === "blogs" && commentError && <p className="notice" role="alert">
+        Unable to load the comment count.{" "}<button className="text-link" onClick={() => void refreshComments()}>Retry comment count</button>
+      </p>}
       {signIn && <p><Link className="text-link" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in to react</Link></p>}
       {(error || loadError) && <p className="notice" role="alert">{error || queryError(loadError)}</p>}
       {(needsRefresh || loadError) && (

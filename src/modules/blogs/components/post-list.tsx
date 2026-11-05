@@ -117,16 +117,19 @@ export default function PostList({ data: initial, filters, startWriting = false 
 
   useEffect(() => {
     const panel = editorSection.current;
-    if (!editor || !userId || !panel) return;
     const header = document.querySelector(".site-header");
-    const feedPage = panel.closest(".feed-page");
+    const feedPage = sentinel.current?.closest<HTMLElement>(".feed-page");
     if (!header || !feedPage) return;
     const fitPanel = () => {
-      panel.style.setProperty("--editor-top", `${header.getBoundingClientRect().bottom}px`);
-      panel.style.setProperty("--editor-width", `${feedPage.getBoundingClientRect().width}px`);
+      const bounds = feedPage.getBoundingClientRect();
+      feedPage.style.setProperty("--feed-center", `${bounds.left + bounds.width / 2}px`);
+      feedPage.style.setProperty("--feed-width", `${bounds.width}px`);
+      panel?.style.setProperty("--editor-top", `${header.getBoundingClientRect().bottom}px`);
+      panel?.style.setProperty("--editor-width", `${bounds.width}px`);
+      panel?.style.setProperty("--editor-left", `${bounds.left}px`);
     };
     fitPanel();
-    if (!panel.open) panel.showModal();
+    if (editor && userId && panel && !panel.open) panel.showModal();
     const observer = new ResizeObserver(fitPanel);
     observer.observe(header);
     observer.observe(feedPage);

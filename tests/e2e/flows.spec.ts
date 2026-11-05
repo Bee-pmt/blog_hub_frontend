@@ -3,26 +3,21 @@ import type { ChatMessage } from "@/modules/chat/types";
 import { encode } from "next-auth/jwt";
 const api = "http://localhost:5301/api/v1";
 async function openSidebar(page: Page) {
-  const sidebar = page.getByRole("dialog", { name: "Sidebar", exact: true });
-  if (!await sidebar.isVisible()) await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
+  const sidebar = page.getByRole("complementary", { name: "Sidebar", exact: true });
   await expect(sidebar).toBeVisible();
-  await expect(sidebar).toHaveCSS("transform", "none");
   return sidebar;
 }
 async function clickWorkspaceLink(page: Page, name: string | RegExp) {
   const sidebar = await openSidebar(page);
   await sidebar.getByRole("link", { name, exact: true }).click();
-  await expect(sidebar).not.toBeVisible();
 }
 async function signOut(page: Page) {
   const sidebar = await openSidebar(page);
   await sidebar.getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(sidebar).not.toBeVisible();
 }
 async function expectUnreadCount(page: Page, count: string) {
   const sidebar = await openSidebar(page);
   await expect(sidebar.locator(".chat-unread-count")).toHaveText(count);
-  await sidebar.getByRole("button", { name: "Close sidebar", exact: true }).click();
 }
 async function googleHandoff(page: Page, idToken: string, mode = "login") {
   const token = await encode({ secret: "playwright-only-google-oauth-secret-32-bytes", salt: "bloghub_google", maxAge: 600, token: { googleIdToken: idToken, googleExpiresAt: Date.now() + 600_000 } });
@@ -47,7 +42,6 @@ test("new Google users set a password before creation and can later use password
   await expect(page).toHaveURL(/\/dashboard$/);
   await openSidebar(page);
   await expect(page.getByRole("heading", { name: "Google Writer", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   expect((await page.context().cookies()).some(cookie => cookie.name === "bloghub_google")).toBe(false);
   await signOut(page);
   await expect(page).toHaveURL(/\/login/);
@@ -584,7 +578,6 @@ test("settings changes passwords, preserves incorrect-password sessions, and sig
   await otherTab.goto("/dashboard");
   await openSidebar(otherTab);
   await expect(otherTab.getByRole("link", { name: "Account settings" })).toBeVisible();
-  await otherTab.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await clickWorkspaceLink(page, "Account settings");
   await expect(page).toHaveURL(/\/settings$/);
   await page.screenshot({ path: test.info().outputPath("password-settings.png"), fullPage: true });
@@ -851,7 +844,6 @@ test("RTK Query clears private lists when signing out and switching accounts", a
   await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
   await openSidebar(page);
   await expect(page.getByRole("heading", { name: "Other Writer", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   // Sign-in returns to the old editor URL; it must not reuse the previous owner's detail.
   await expect(page.getByRole("heading", { name: "Unable to open this story.", exact: true })).toBeVisible();
   await clickWorkspaceLink(page, "My stories");
@@ -897,7 +889,6 @@ test("notifications show relative times, paginate, mark read, and keep recipient
   await panel.getByRole("button", { name: "Mark as read", exact: true }).first().click();
   await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications, 11 unread", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await expect(panel.locator("li").first().getByText("Unread", { exact: true })).toHaveCount(0);
   await panel.getByRole("button", { name: "Next", exact: true }).click();
   await expect(panel.getByText("Page 2 of 2", { exact: true })).toBeVisible();
@@ -905,7 +896,6 @@ test("notifications show relative times, paginate, mark read, and keep recipient
   await panel.getByRole("button", { name: "Mark all as read", exact: true }).click();
   await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Mark all as read", exact: true })).toBeDisabled();
   await clickWorkspaceLink(page, "My stories");
   await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
@@ -955,12 +945,10 @@ test("notifications recover from list and read failures and show an empty state"
   await expect(panel.getByRole("alert")).toContainText("Unable to mark as read");
   await openSidebar(page);
   await expect(page.getByRole("link", { name: "Notifications, 1 unread", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await panel.getByRole("button", { name: "Mark as read", exact: true }).click();
   await expect(panel.getByRole("alert")).toHaveCount(0);
   await openSidebar(page);
   await expect(bell).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await page.reload();
   await expect(panel.getByText("Deleted story notification", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Mark as read", exact: true })).toHaveCount(0);
@@ -1485,12 +1473,10 @@ test("unread chat badge totals all pages and updates across dashboard navigation
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await openSidebar(page);
   await expect(badge).toHaveCount(0);
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await signOut(page);
   await login(page, "other@test.local");
   await openSidebar(page);
   await expect(badge).toHaveCount(0);
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
 });
 
 test("chat typing, keyboard sending, and canonical read receipts work together", async ({ page, request }) => {
@@ -1870,7 +1856,7 @@ test("reactions toggle and replace votes on blogs, comments and expanded replies
   await expect(reply.getByRole("button", { name: "Dislike (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
   const calls = await (await request.get(`${api}/__requests`)).json();
   expect(calls.some((item: { path: string; method: string }) => item.path === "/api/v1/comments/reply/reactions" && item.method === "POST")).toBe(true);
-  await blog.getByRole("link", { name: "Comment", exact: true }).click();
+  await blog.getByRole("link", { name: /^Comment \(/ }).click();
   await expect(page.getByRole("region", { name: "Comments", exact: true })).toBeInViewport();
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -2176,7 +2162,7 @@ test("feed opens the existing editor upward and preserves draft and leave protec
   await expect(page.getByRole("heading", { name: "An inline story", exact: true })).toBeVisible();
   await expect(page.getByText("13 stories", { exact: true })).toBeVisible();
   const card = page.locator(".feed-card:visible").filter({ has: page.getByRole("heading", { name: "An inline story", exact: true }) });
-  await expect(card.getByRole("link", { name: "Comment", exact: true })).toHaveAttribute("href", /\/blogs\/an-inline-story#comments$/);
+  await expect(card.getByRole("link", { name: /^Comment \(/ })).toHaveAttribute("href", /\/blogs\/an-inline-story#comments$/);
   await card.getByRole("button", { name: "Like (0)", exact: true }).click();
   await expect(card.getByRole("button", { name: "Like (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Write blog", exact: false }).click();
@@ -2265,7 +2251,6 @@ test("restricted admins see only granted controls and refresh revoked access wit
   await login(page);
   await openSidebar(page);
   await expect(page.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close sidebar", exact: true }).click();
   await page.goto("/dashboard/admin/posts");
   const other = page.locator(".manage-row:visible").filter({ has: page.getByRole("heading", { name: "Thoughtful story 2", exact: true }) });
   await expect(other.getByRole("button", { name: "Inspect", exact: true })).toBeVisible();
@@ -2333,56 +2318,63 @@ test("Admin Trash does not infer restore or purge authority from the delete gran
   await expect(trashed.getByRole("button", { name: "Delete permanently", exact: true })).toHaveCount(0);
 });
 
-test("sidebar slides over the feed, shows visitor links, and restores keyboard focus", async ({ page }) => {
+test("sidebar is built in with visitor links and no toggle icon", async ({ page }) => {
   await page.goto("/");
-  const toggle = page.getByRole("button", { name: "Open sidebar", exact: true });
-  const sidebar = page.getByRole("dialog", { name: "Sidebar", exact: true });
-  await expect(sidebar).not.toBeVisible();
-  const feed = page.locator(".feed-page");
-  await expect(feed).toBeVisible();
-  const before = await feed.boundingBox();
-  await toggle.click();
-  await expect(sidebar).toHaveCSS("animation-name", "sidebar-open");
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  const nav = sidebar.getByRole("navigation", { name: "Account navigation" });
-  await expect(nav.getByRole("link")).toHaveText(["Log in", "Sign up"]);
+  const sidebar = await openSidebar(page);
+  await expect(page.getByRole("button", { name: "Open sidebar", exact: true })).toHaveCount(0);
+  await expect(sidebar.getByRole("navigation", { name: "Account navigation" }).getByRole("link")).toHaveText(["Log in", "Sign up"]);
   await expect(sidebar.getByRole("navigation", { name: "Workspace navigation" })).toHaveCount(0);
-  expect((await feed.boundingBox())!.width).toBe(before!.width);
-  expect((await feed.boundingBox())!.x).toBe(before!.x);
-  await page.keyboard.press("Escape");
-  await expect(sidebar).not.toBeVisible();
-  await expect(toggle).toBeFocused();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await toggle.click();
+  await expect(page.locator(".feed-page")).toBeVisible();
   await sidebar.getByRole("link", { name: "Sign up", exact: true }).click();
   await expect(page).toHaveURL(/\/register$/);
-  await expect(sidebar).not.toBeVisible();
+  await expect(sidebar).toBeVisible();
 });
 
-test("sidebar keeps workspace permissions and fits mobile and dark themes", async ({ page, request }) => {
+test("built-in sidebar preserves permissions and responsive layouts", async ({ page, request }) => {
   await request.post(`${api}/__user-access`, { data: { id: "author", role: "admin", permissions: ["blogs.moderate"] } });
   await login(page);
   await page.goto("/");
+  const sidebar = await openSidebar(page);
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    const sidebar = await openSidebar(page);
     await expect(sidebar.getByRole("link", { name: "My Trash", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Admin Trash", exact: true })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Users · Admin", exact: true })).toHaveCount(0);
-    await expect(sidebar.getByRole("link", { name: "Log in", exact: true })).toHaveCount(0);
-    const bounds = await sidebar.boundingBox();
-    expect(bounds!.x).toBe(0);
-    expect(bounds!.width).toBeLessThanOrEqual(width);
-    expect(await sidebar.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await sidebar.screenshot({ path: test.info().outputPath(`sidebar-${width}.png`) });
-    await sidebar.getByRole("button", { name: "Close sidebar", exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width === 1440) {
+      const aside = await sidebar.boundingBox();
+      const feed = await page.locator(".feed-page").boundingBox();
+      expect(aside!.x + aside!.width).toBeLessThan(feed!.x);
+      expect(feed!.width).toBe(850);
+    }
+    await page.screenshot({ path: test.info().outputPath(`built-in-sidebar-${width}.png`), fullPage: true });
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-  const sidebar = await openSidebar(page);
-  await sidebar.screenshot({ path: test.info().outputPath("sidebar-dark.png") });
+  await page.screenshot({ path: test.info().outputPath("built-in-sidebar-dark.png") });
   await sidebar.getByRole("link", { name: "My stories", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(sidebar).not.toBeVisible();
-  await expect(page.locator(".dashboard-sidebar:visible")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "My stories", exact: true })).toBeVisible();
+  await expect(sidebar).toBeVisible();
+});
+
+test("article card contrast, circular avatar and comment action count stay correct", async ({ page }) => {
+  await page.goto("/blogs/thoughtful-story-1");
+  const card = page.locator(".article");
+  await expect(card).toBeVisible();
+  expect(await card.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(await page.locator("body").evaluate(element => getComputedStyle(element).backgroundColor));
+  await expect(page.locator(".article-avatar")).toHaveCSS("border-radius", "50%");
+  await expect(page.locator(".article-avatar")).toHaveCSS("background-color", "rgb(66, 92, 105)");
+  const action = page.locator(".reaction-comment");
+  await expect(action).toHaveText("Comment (0)");
+  await login(page);
+  await page.goto("/blogs/thoughtful-story-1");
+  const comments = page.getByRole("region", { name: "Comments", exact: true });
+  await comments.getByRole("textbox", { name: "Your comment", exact: true }).fill("Counting this comment");
+  await comments.getByRole("button", { name: "Post comment", exact: true }).click();
+  await expect(action).toHaveText("Comment (1)");
+  await comments.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await expect(action).toHaveText("Comment (0)");
+  await page.setViewportSize({ width: 390, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("article-mobile.png"), fullPage: true });
 });

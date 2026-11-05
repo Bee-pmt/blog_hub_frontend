@@ -82,4 +82,6 @@ Do not pass an application access token or private dashboard response into these
 
 Related: [Stories](blog.md), [Taxonomy](taxonomy.md), [Base UI and voice input](base.md).
 
-The header sidebar icon opens the shared left-side drawer without moving the 850px feed. The page background is darker gray, while cards and the writing form remain lighter. See [Base UI](base.md) for navigation and accessibility behavior.
+The shared sidebar is built into the page beside the 850px feed on desktop, and above it on smaller screens. There is no sidebar toggle icon. The page background is darker gray, while cards and the writing form remain lighter. See [Base UI](base.md) for navigation and accessibility behavior.
+
+Article cards have a lighter gray surface than the page background and circular colored author initials. The Comment action shows the backend’s top-level comment total using the existing first-page RTK Query cache, shared with the comments section. Counts refresh after comment mutations; replies retain their separate counts.

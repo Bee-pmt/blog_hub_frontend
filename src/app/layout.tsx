@@ -76,7 +76,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <header className="site-header">
               <div className="site-container header-inner">
                 <div className="header-brand">
-                  <WorkspaceSidebar navItems={navItems} />
                   <Link className="wordmark" href="/" aria-label="BlogHub home">
                     BlogHub<span aria-hidden="true">.</span>
                   </Link>
@@ -87,7 +86,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 </nav>
               </div>
             </header>
-            {children}
+            <div className="site-content">
+              <WorkspaceSidebar navItems={navItems} />
+              <div className="site-main">{children}</div>
+            </div>
             <footer className="site-footer">
               <div className="site-container footer-inner">
                 <Link className="wordmark footer-wordmark" href="/">
