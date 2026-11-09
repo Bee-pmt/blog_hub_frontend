@@ -122,20 +122,28 @@ export default function PostList({ data: initial, filters, startWriting = false,
     const panel = editorSection.current;
     const header = document.querySelector(".site-header");
     const feedMain = sentinel.current?.closest<HTMLElement>(".feed-main");
+    const sidebar = document.querySelector<HTMLElement>(".workspace-sidebar");
     if (!header || !feedMain) return;
     const fitPanel = () => {
       const bounds = feedMain.getBoundingClientRect();
       feedMain.style.setProperty("--feed-center", `${bounds.left + bounds.width / 2}px`);
       feedMain.style.setProperty("--feed-width", `${bounds.width}px`);
-      panel?.style.setProperty("--editor-top", `${header.getBoundingClientRect().bottom}px`);
+      const headerBottom = header.getBoundingClientRect().bottom;
+      sidebar?.style.setProperty("--feed-header-bottom", `${headerBottom}px`);
+      const top = window.innerWidth <= 760 ? Math.max(headerBottom, sidebar?.getBoundingClientRect().bottom ?? 0) + 8 : headerBottom;
+      panel?.style.setProperty("--editor-top", `${top}px`);
       panel?.style.setProperty("--editor-width", `${bounds.width}px`);
       panel?.style.setProperty("--editor-left", `${bounds.left}px`);
     };
     fitPanel();
-    if (editor && userId && panel && !panel.open) panel.showModal();
+    if (editor && userId && panel && !panel.open) {
+      panel.show();
+      fitPanel();
+    }
     const observer = new ResizeObserver(fitPanel);
     observer.observe(header);
     observer.observe(feedMain);
+    if (sidebar) observer.observe(sidebar);
     return () => observer.disconnect();
   }, [editor, userId]);
 
@@ -147,6 +155,19 @@ export default function PostList({ data: initial, filters, startWriting = false,
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [ready, editor, hasNextPage, isFetching, feedError, fetchNextPage]);
+
+  useEffect(() => {
+    if (!editor || !userId) return;
+    const navigate = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || editorSection.current?.contains(link) || (link.target && link.target !== "_self") || link.hasAttribute("download")) return;
+      // The recovery guard stops rejected clicks before they reach this listener.
+      setEditor(null);
+    };
+    window.addEventListener("click", navigate);
+    return () => window.removeEventListener("click", navigate);
+  }, [editor, userId]);
 
   function closeEditor() {
     setEditor(null);
@@ -161,13 +182,18 @@ export default function PostList({ data: initial, filters, startWriting = false,
   return (
     <div className="feed-layout">
       <div className="feed-main">
-        <div className="feed-heading">
+        <div className="feed-heading" inert={!!editor && !!user}>
           <div><p className="eyebrow">The journal</p><h1>Explore Stories</h1><p className="muted">Discover ideas, experiences, and stories.</p></div>
           {user ? <button className="button button-primary feed-write-button" type="button" disabled={loading} onClick={event => { writeButton.current = event.currentTarget; setEditor({}); }}><SquarePen size={17} aria-hidden="true" />Write a Story</button>
             : <Link className="button button-primary feed-write-button" href={`/login?returnTo=${encodeURIComponent("/?write=1#feed-editor")}`}><SquarePen size={17} aria-hidden="true" />Write a Story</Link>}
         </div>
-        {children}
-      {editor && user && <dialog ref={editorSection} id="feed-editor" className="feed-editor" aria-label="Write blog" onCancel={(event) => {
+        <div inert={!!editor && !!user}>{children}</div>
+      {editor && user && <dialog ref={editorSection} id="feed-editor" className="feed-editor" aria-label="Write blog" onKeyDown={event => {
+        if (event.key === "Escape" && !event.defaultPrevented) {
+          event.preventDefault();
+          editorSection.current?.querySelector<HTMLButtonElement>("[data-leave-editor]")?.click();
+        }
+      }} onCancel={(event) => {
         event.preventDefault();
         editorSection.current?.querySelector<HTMLButtonElement>("[data-leave-editor]")?.click();
       }}>
@@ -176,7 +202,7 @@ export default function PostList({ data: initial, filters, startWriting = false,
           <PostEditor key={`${user.id}:${user.role}:${editor.id || "new"}`} id={editor.id} onSaved={saved} />
         </div>
       </dialog>}
-      <div className="feed-posts">
+      <div className="feed-posts" inert={!!editor && !!user}>
         <p className="result-count">{total} {total === 1 ? "story" : "stories"}</p>
         {posts.length ? <div className="post-grid feed-list">{posts.map((post) => <FeedPost key={post.id} post={post} />)}</div> : (
           <div className="empty-state"><h3>No stories found</h3><p>Try another search or clear the filters.</p><Link className="text-link" href="/#journal">See all stories</Link></div>

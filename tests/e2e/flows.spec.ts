@@ -2152,7 +2152,9 @@ test("feed opens the existing editor upward and preserves draft and leave protec
     await expect.poll(async () => {
       const panel = await editor.boundingBox();
       const header = await page.locator(".site-header").boundingBox();
-      return Math.abs(panel!.y - header!.y - header!.height);
+      const sidebar = await page.getByRole("complementary", { name: "Sidebar", exact: true }).boundingBox();
+      const top = width <= 760 ? sidebar!.y + sidebar!.height + 8 : header!.y + header!.height;
+      return Math.abs(panel!.y - top);
     }).toBeLessThan(2);
     const panel = await editor.boundingBox();
     const feed = await page.locator(".feed-main").boundingBox();
@@ -2596,4 +2598,64 @@ test("user permissions stay local until saved and preserve additional server gra
   await expect(modal.getByRole("checkbox", { name: "reports.view", exact: true })).toBeChecked();
   await page.keyboard.press("Escape");
   await expect(modal).toHaveCount(0);
+});
+
+
+test("feed editor allows page navigation and theme changes while protecting unsaved writing", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await login(page);
+  const editor = page.getByRole("dialog", { name: "Write blog", exact: true });
+  async function write() {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Write a Story", exact: true }).click();
+    await expect(editor.getByLabel("Story title", { exact: true })).toBeVisible();
+  }
+  await write();
+  await editor.getByLabel("Story title", { exact: true }).fill("Navigation recovery copy");
+  const theme = page.getByRole("switch", { name: "Dark mode", exact: true });
+  const before = await theme.getAttribute("aria-checked");
+  await theme.click();
+  await expect(theme).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
+  await expect(editor.getByLabel("Story title", { exact: true })).toHaveValue("Navigation recovery copy");
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("link", { name: "BlogHub home", exact: true }).click();
+  await expect(editor).toBeVisible();
+  await expect(editor.getByLabel("Story title", { exact: true })).toHaveValue("Navigation recovery copy");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("link", { name: "BlogHub home", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page).toHaveURL("/");
+  await page.getByRole("button", { name: "Write a Story", exact: true }).click();
+  await expect(editor.getByText("Unsaved writing found.", { exact: true })).toBeVisible();
+  await editor.getByRole("button", { name: "Back to feed", exact: false }).click();
+  await page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith("bloghub-recovery:")) localStorage.removeItem(key); });
+  for (const link of [
+    { name: "My Stories", url: /\/dashboard$/ },
+    { name: "My Activity", url: /\/dashboard\/activity$/ },
+    { name: "Profile", url: /\/dashboard$/ },
+    { name: "Read Thoughtful story 1", url: /\/blogs\/thoughtful-story-1$/ },
+    { name: "Explore Ideas", url: /category=ideas/ },
+  ]) {
+    await write();
+    await page.getByRole("link", { name: link.name, exact: true }).click();
+    await expect(page).toHaveURL(link.url);
+    await expect(editor).toHaveCount(0);
+  }
+  await write();
+  await editor.getByLabel("Story title", { exact: true }).fill("Keep this on cancellation");
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("link", { name: "My Activity", exact: true }).click();
+  await expect(editor).toBeVisible();
+  await expect(page).toHaveURL("/");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("link", { name: "My Activity", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/activity$/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith("bloghub-recovery:")) localStorage.removeItem(key); });
+  await write();
+  await theme.click();
+  await expect(editor).toBeVisible();
+  await clickWorkspaceLink(page, "My Activity");
+  await expect(page).toHaveURL(/\/dashboard\/activity$/);
+  await expect(editor).toHaveCount(0);
 });

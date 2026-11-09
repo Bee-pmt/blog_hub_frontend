@@ -93,7 +93,7 @@ export function useDraftRecovery({
       event.returnValue = "";
     };
     const click = (event: MouseEvent) => {
-      if (leaveAllowed.current || event.defaultPrevented || event.button !== 0)
+      if (leaveAllowed.current || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
         return;
       const link = (event.target as Element).closest(
         "a[href]",
@@ -107,7 +107,8 @@ export function useDraftRecovery({
           link.target === "_blank" ||
           link.hasAttribute("download") ||
           (link.pathname === window.location.pathname &&
-            link.search === window.location.search))
+            link.search === window.location.search &&
+            (!document.querySelector(".feed-editor[open]") || link.closest(".feed-editor"))))
       )
         return;
       if (
