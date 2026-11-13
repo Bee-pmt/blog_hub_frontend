@@ -27,9 +27,17 @@ export default function MessageComposer({
   onReadReceipt?: () => void;
   recipientName?: string;
 }) {
-  const { socket: connection, connectionError, reconnect } = useChatConnection();
+  const {
+    socket: connection,
+    connectionError,
+    reconnect,
+  } = useChatConnection();
   const socket = useRef<typeof connection | null>(connection);
-  const pending = useRef<{ conversationId: string; clientMessageId: string; content: string } | null>(null);
+  const pending = useRef<{
+    conversationId: string;
+    clientMessageId: string;
+    content: string;
+  } | null>(null);
   const busy = useRef(false);
   const typing = useRef(false);
   const lastTyping = useRef(0);
@@ -60,8 +68,16 @@ export default function MessageComposer({
     const onMessage = (message: ChatMessage) => {
       if (active) received(message);
     };
-    const onReceipt = (receipt: { conversationId: string; updated: number }) => {
-      if (active && receipt.conversationId === conversationId && receipt.updated > 0) readReceipt();
+    const onReceipt = (receipt: {
+      conversationId: string;
+      updated: number;
+    }) => {
+      if (
+        active &&
+        receipt.conversationId === conversationId &&
+        receipt.updated > 0
+      )
+        readReceipt();
     };
     const onTypingStart = (event: { conversationId: string }) => {
       if (!active || event.conversationId !== conversationId) return;
@@ -115,13 +131,25 @@ export default function MessageComposer({
     let active = true;
     let inFlight = false;
     async function markRead() {
-      if (!active || inFlight || !connection?.connected || document.visibilityState !== "visible" || !document.hasFocus()) return;
+      if (
+        !active ||
+        inFlight ||
+        !connection?.connected ||
+        document.visibilityState !== "visible" ||
+        !document.hasFocus()
+      )
+        return;
       inFlight = true;
       try {
-        const reply: { ok: boolean; error?: { message: string } } = await connection.timeout(10000)
-          .emitWithAck("message:read", { conversationId });
+        const reply: { ok: boolean; error?: { message: string } } =
+          await connection
+            .timeout(10000)
+            .emitWithAck("message:read", { conversationId });
         if (!active) return;
-        if (!reply.ok) throw new Error(reply.error?.message || "Unable to mark messages read.");
+        if (!reply.ok)
+          throw new Error(
+            reply.error?.message || "Unable to mark messages read.",
+          );
         setReadError("");
         confirmRead(readKey.split("|"));
       } catch {
@@ -171,12 +199,18 @@ export default function MessageComposer({
     }
     // Keep the same ID and text after a timeout: the server may already have saved it.
     stopTyping();
-    pending.current ??= { conversationId, clientMessageId: crypto.randomUUID(), content };
+    pending.current ??= {
+      conversationId,
+      clientMessageId: crypto.randomUUID(),
+      content,
+    };
     busy.current = true;
     setSending(true);
     setError("");
     try {
-      const reply: SendReply = await connection.timeout(10000).emitWithAck("message:send", pending.current);
+      const reply: SendReply = await connection
+        .timeout(10000)
+        .emitWithAck("message:send", pending.current);
       if (socket.current !== connection) return;
       if (!reply.ok) {
         setError(reply.error.message);
@@ -187,7 +221,9 @@ export default function MessageComposer({
       onSent(reply.data.message);
     } catch {
       if (socket.current === connection)
-        setError("Delivery could not be confirmed. Send again to retry safely.");
+        setError(
+          "Delivery could not be confirmed. Send again to retry safely.",
+        );
     } finally {
       busy.current = false;
       setSending(false);
@@ -198,11 +234,42 @@ export default function MessageComposer({
     <form className="chat-composer" onSubmit={sendMessage}>
       <p className="muted" role="status">
         {connected ? "Chat connected" : "Chat disconnected"}
-        {!connected && <> · <button className="text-link" type="button" onClick={() => void reconnect()}>Reconnect</button></>}
+        {!connected && (
+          <>
+            {" "}
+            ·{" "}
+            <button
+              className="text-link"
+              type="button"
+              onClick={() => void reconnect()}
+            >
+              Reconnect
+            </button>
+          </>
+        )}
       </p>
-      {otherTyping && <p className="muted" role="status">{recipientName || "The other participant"} is typing…</p>}
-      {readError && <p className="notice" role="alert">{readError} <button type="button" className="text-link" onClick={() => setReadRetry(readRetry + 1)}>Retry read status</button></p>}
-      {(error || connectionError) && <p className="notice" role="alert">{error || connectionError}</p>}
+      {otherTyping && (
+        <p className="muted" role="status">
+          {recipientName || "The other participant"} is typing…
+        </p>
+      )}
+      {readError && (
+        <p className="notice" role="alert">
+          {readError}{" "}
+          <button
+            type="button"
+            className="text-link"
+            onClick={() => setReadRetry(readRetry + 1)}
+          >
+            Retry read status
+          </button>
+        </p>
+      )}
+      {(error || connectionError) && (
+        <p className="notice" role="alert">
+          {error || connectionError}
+        </p>
+      )}
       <label htmlFor="chat-message">Message</label>
       <textarea
         id="chat-message"
@@ -217,13 +284,20 @@ export default function MessageComposer({
         }}
         onBlur={stopTyping}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
           }
         }}
       />
-      <button className="button" disabled={!connected || sending || !content.trim()}>
+      <button
+        className="button"
+        disabled={!connected || sending || !content.trim()}
+      >
         {sending ? "Sending…" : "Send"}
       </button>
     </form>

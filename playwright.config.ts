@@ -25,6 +25,7 @@ export default defineConfig({
       env: {
         NEXT_PUBLIC_API_BASE_URL: "http://localhost:5301/api/v1",
         BLOGHUB_TEST_BUILD: "1",
+        NEXT_PUBLIC_RECAPTCHA_SITE_KEY: "playwright-contact-site-key",
         AUTH_SECRET: "playwright-only-google-oauth-secret-32-bytes",
         AUTH_URL: "http://localhost:3001",
         AUTH_GOOGLE_ID: "playwright-client-id",

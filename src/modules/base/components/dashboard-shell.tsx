@@ -5,8 +5,19 @@ import type { ReactNode } from "react";
 
 import { useEffect, useId, useRef, useState } from "react";
 import {
-  LayoutGrid, BookOpen, SquarePen, History, Tags, MessagesSquare,
-  Trash2, Library, UsersRound, ChevronDown, LogOut, Settings, UserRound,
+  LayoutGrid,
+  BookOpen,
+  SquarePen,
+  History,
+  Tags,
+  MessagesSquare,
+  Trash2,
+  Library,
+  UsersRound,
+  ChevronDown,
+  LogOut,
+  Settings,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -69,7 +80,10 @@ export default function DashboardShell({
         Taking you to sign in…
       </main>
     );
-  if ((permission && !hasPermission(user, permission)) || (admin && !permission))
+  if (
+    (permission && !hasPermission(user, permission)) ||
+    (admin && !permission)
+  )
     return (
       <main id="main-content" className="site-container empty-state">
         <h1>You do not have permission to open this workspace.</h1>
@@ -79,7 +93,10 @@ export default function DashboardShell({
       </main>
     );
   return (
-    <main id="main-content" className="site-container dashboard-layout dashboard-drawer-layout">
+    <main
+      id="main-content"
+      className="site-container dashboard-layout dashboard-drawer-layout"
+    >
       <div className="dashboard-content">{children}</div>
     </main>
   );
@@ -105,84 +122,194 @@ export function WorkspaceSidebar({ navItems }: { navItems: ModuleNavItem[] }) {
   const profileMenu = useRef<HTMLDetailsElement>(null);
   const contentId = useId();
   const pathname = usePathname();
-  const visibleItems = navItems.filter(item => item.permission ? hasPermission(user, item.permission) : !item.admin);
+  const visibleItems = navItems.filter((item) =>
+    item.permission ? hasPermission(user, item.permission) : !item.admin,
+  );
   const order = Object.keys(navigation);
   visibleItems.sort((a, b) => order.indexOf(a.href) - order.indexOf(b.href));
-  const role = user?.role === "super_admin" ? "Super administrator" : user?.role === "admin" ? "Administrator" : "Author";
+  const role =
+    user?.role === "super_admin"
+      ? "Super administrator"
+      : user?.role === "admin"
+        ? "Administrator"
+        : "Author";
 
   function links(admin: boolean) {
-    return visibleItems.filter(item => !!item.admin === admin).map(item => {
-      const { label, icon: Icon } = navigation[item.href] || { label: item.label, icon: BookOpen };
-      const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
-      return (
-        <Link key={item.href} href={item.href} className={item.href === "/dashboard/chat" ? "workspace-chat-link" : undefined}
-          aria-current={active ? "page" : undefined} onClick={() => setExpanded(false)}>
-          <Icon size={19} aria-hidden="true" /><span>{label}</span>
-          {item.href === "/dashboard/chat" && <UnreadChatBadge />}
-        </Link>
-      );
-    });
+    return visibleItems
+      .filter((item) => !!item.admin === admin)
+      .map((item) => {
+        const { label, icon: Icon } = navigation[item.href] || {
+          label: item.label,
+          icon: BookOpen,
+        };
+        const active =
+          pathname === item.href ||
+          (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={
+              item.href === "/dashboard/chat"
+                ? "workspace-chat-link"
+                : undefined
+            }
+            aria-current={active ? "page" : undefined}
+            onClick={() => setExpanded(false)}
+          >
+            <Icon size={19} aria-hidden="true" />
+            <span>{label}</span>
+            {item.href === "/dashboard/chat" && <UnreadChatBadge />}
+          </Link>
+        );
+      });
   }
 
   return (
-    <aside className="dashboard-sidebar workspace-sidebar" aria-label="Sidebar" data-expanded={expanded}>
+    <aside
+      className="dashboard-sidebar workspace-sidebar"
+      aria-label="Sidebar"
+      data-expanded={expanded}
+    >
       <div className="sidebar-heading">
         <span className="eyebrow">BlogHub workspace</span>
-        <button className="mobile-workspace-toggle" type="button" aria-expanded={expanded} aria-controls={contentId}
-          onClick={() => setExpanded(value => !value)}>Menu <ChevronDown size={18} aria-hidden="true" /></button>
-        {!loading && user && <div className="sidebar-notifications" onClick={() => setExpanded(false)}><NotificationBell key={user.id} /></div>}
+        <button
+          className="mobile-workspace-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          Menu <ChevronDown size={18} aria-hidden="true" />
+        </button>
+        {!loading && user && (
+          <div
+            className="sidebar-notifications"
+            onClick={() => setExpanded(false)}
+          >
+            <NotificationBell key={user.id} />
+          </div>
+        )}
       </div>
       <div id={contentId} className="sidebar-body">
-        {loading ? <p className="field-help" role="status">Checking your session…</p> : error ? (
-          <p className="notice" role="alert">{error}{" "}<button className="text-link" onClick={() => void restore()}>Retry session check</button></p>
+        {loading ? (
+          <p className="field-help" role="status">
+            Checking your session…
+          </p>
+        ) : error ? (
+          <p className="notice" role="alert">
+            {error}{" "}
+            <button className="text-link" onClick={() => void restore()}>
+              Retry session check
+            </button>
+          </p>
         ) : user ? (
           <>
             <nav aria-label="Workspace navigation">
               <p className="sidebar-group-label">Workspace</p>
-              <Link href="/" aria-current={pathname === "/" ? "page" : undefined} onClick={() => setExpanded(false)}>
-                <LayoutGrid size={19} aria-hidden="true" /><span>Overview</span>
+              <Link
+                href="/"
+                aria-current={pathname === "/" ? "page" : undefined}
+                onClick={() => setExpanded(false)}
+              >
+                <LayoutGrid size={19} aria-hidden="true" />
+                <span>Overview</span>
               </Link>
               {links(false)}
-              {visibleItems.some(item => item.admin) && <>
-                <p className="sidebar-group-label administration-label">Administration</p>
-                {links(true)}
-              </>}
+              {visibleItems.some((item) => item.admin) && (
+                <>
+                  <p className="sidebar-group-label administration-label">
+                    Administration
+                  </p>
+                  {links(true)}
+                </>
+              )}
             </nav>
-            <details ref={profileMenu} className="sidebar-user" onKeyDown={event => {
-              if (event.key === "Escape" && profileMenu.current) {
-                profileMenu.current.open = false;
-                profileMenu.current.querySelector("summary")?.focus();
-              }
-            }}>
+            <details
+              ref={profileMenu}
+              className="sidebar-user"
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && profileMenu.current) {
+                  profileMenu.current.open = false;
+                  profileMenu.current.querySelector("summary")?.focus();
+                }
+              }}
+            >
               <summary aria-label="Account menu">
-                <span className="user-avatar" aria-hidden="true">{Array.from(user.displayName.trim())[0]?.toLocaleUpperCase() || "U"}</span>
-                <span className="sidebar-user-info"><strong>{user.displayName}</strong><span>{role}</span></span>
+                <span className="user-avatar" aria-hidden="true">
+                  {Array.from(
+                    user.displayName.trim(),
+                  )[0]?.toLocaleUpperCase() || "U"}
+                </span>
+                <span className="sidebar-user-info">
+                  <strong>{user.displayName}</strong>
+                  <span>{role}</span>
+                </span>
                 <ChevronDown size={17} aria-hidden="true" />
               </summary>
               <div className="sidebar-user-menu">
                 <p className="field-help">{user.email}</p>
-                <Link href="/dashboard" onClick={() => { profileMenu.current!.open = false; setExpanded(false); }}><UserRound size={18} aria-hidden="true" />Profile</Link>
-                <Link href="/settings" aria-label="Account settings" onClick={() => { profileMenu.current!.open = false; setExpanded(false); }}><Settings size={18} aria-hidden="true" />Settings</Link>
-                <button type="button" data-leave-editor disabled={signingOut} onClick={async () => {
-                  setSigningOut(true);
-                  setLogoutError("");
-                  try {
-                    await logout();
+                <Link
+                  href="/dashboard"
+                  onClick={() => {
+                    profileMenu.current!.open = false;
                     setExpanded(false);
-                    toast.success("Signed out successfully.");
-                  } catch (failure) {
-                    setLogoutError(errorMessage(failure));
-                    toast.error(errorMessage(failure));
-                  } finally { setSigningOut(false); }
-                }}><LogOut size={18} aria-hidden="true" />{signingOut ? "Signing out…" : "Sign out"}</button>
-                {logoutError && <p className="notice" role="alert">{logoutError}</p>}
+                  }}
+                >
+                  <UserRound size={18} aria-hidden="true" />
+                  Profile
+                </Link>
+                <Link
+                  href="/settings"
+                  aria-label="Account settings"
+                  onClick={() => {
+                    profileMenu.current!.open = false;
+                    setExpanded(false);
+                  }}
+                >
+                  <Settings size={18} aria-hidden="true" />
+                  Settings
+                </Link>
+                <button
+                  type="button"
+                  data-leave-editor
+                  disabled={signingOut}
+                  onClick={async () => {
+                    setSigningOut(true);
+                    setLogoutError("");
+                    try {
+                      await logout();
+                      setExpanded(false);
+                      toast.success("Signed out successfully.");
+                    } catch (failure) {
+                      setLogoutError(errorMessage(failure));
+                      toast.error(errorMessage(failure));
+                    } finally {
+                      setSigningOut(false);
+                    }
+                  }}
+                >
+                  <LogOut size={18} aria-hidden="true" />
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </button>
+                {logoutError && (
+                  <p className="notice" role="alert">
+                    {logoutError}
+                  </p>
+                )}
               </div>
             </details>
           </>
         ) : (
           <nav aria-label="Account navigation">
-            <Link href="/login" onClick={() => setExpanded(false)}><UserRound size={19} aria-hidden="true" />Log in</Link>
-            <Link href="/register" onClick={() => setExpanded(false)}><SquarePen size={19} aria-hidden="true" />Sign up</Link>
+            <Link href="/login" onClick={() => setExpanded(false)}>
+              <UserRound size={19} aria-hidden="true" />
+              Log in
+            </Link>
+            <Link href="/register" onClick={() => setExpanded(false)}>
+              <SquarePen size={19} aria-hidden="true" />
+              Sign up
+            </Link>
           </nav>
         )}
       </div>

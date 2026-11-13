@@ -16,6 +16,7 @@ describe("module manifest routing", () => {
       "/",
       "/login",
       "/register",
+      "/contact",
       "/forgot-password",
       "/settings",
       "/auth/google",
@@ -50,6 +51,7 @@ describe("module manifest routing", () => {
     ).toBe("admin");
     expect(resolveModuleRoute(["dashboard"])?.route.access).toBe("account");
     expect(resolveModuleRoute(["dashboard", "chat"])?.route.access).toBe("account");
+    expect(resolveModuleRoute(["contact"])?.route.access).toBeUndefined();
     expect(resolveModuleRoute(["unknown"])).toBeNull();
     expect(
       resolveModuleRoute(["dashboard", "posts", "id", "edit", "extra"]),

@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { usePathname } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { API_BASE, errorMessage } from "@/lib/api-client";
@@ -30,7 +38,10 @@ export function UnreadChatBadge() {
   return (
     <span aria-live="polite" aria-atomic="true">
       {!!unreadCount && (
-        <span className="chat-unread-count" aria-label={`${unreadCount} unread messages`}>
+        <span
+          className="chat-unread-count"
+          aria-label={`${unreadCount} unread messages`}
+        >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
       )}
@@ -40,7 +51,9 @@ export function UnreadChatBadge() {
 
 // Keep the socket and its current authentication callback together across page changes.
 function createChatConnection() {
-  let authenticate: ((callback: (data: { accessToken: string }) => void) => void) | null = null;
+  let authenticate:
+    | ((callback: (data: { accessToken: string }) => void) => void)
+    | null = null;
   const socket = io(`${new URL(API_BASE).origin}/chat`, {
     transports: ["websocket"],
     autoConnect: false,
@@ -48,7 +61,9 @@ function createChatConnection() {
   });
   return {
     socket,
-    setAuthenticate(callback: typeof authenticate) { authenticate = callback; },
+    setAuthenticate(callback: typeof authenticate) {
+      authenticate = callback;
+    },
   };
 }
 
@@ -56,22 +71,42 @@ export default function ChatProvider({ children }: { children: ReactNode }) {
   const { user, loading, error } = useAuth();
   const pathname = usePathname();
   const dispatch = useAppDispatch();
-  const active = !!user && !loading && !error &&
+  const active =
+    !!user &&
+    !loading &&
+    !error &&
     (pathname === "/dashboard" || pathname.startsWith("/dashboard/"));
   const [connection] = useState(createChatConnection);
   const { socket } = connection;
   const [connectionError, setConnectionError] = useState("");
   const owner = `${user?.id || ""}:${user?.role || ""}`;
-  const [deletionState, setDeletionState] = useState({ owner, messages: {} as Record<string, string> });
+  const [deletionState, setDeletionState] = useState({
+    owner,
+    messages: {} as Record<string, string>,
+  });
   if (deletionState.owner !== owner) setDeletionState({ owner, messages: {} });
-  const applyDeletion = useCallback((event: MessageDeleted) => {
-    setDeletionState((previous) => previous.owner !== owner || previous.messages[event.messageId]
-      ? previous
-      : { owner, messages: { ...previous.messages, [event.messageId]: event.deletedAt } });
-    dispatch(chatApi.util.invalidateTags([
-      "Conversation", { type: "ChatMessage", id: event.conversationId },
-    ]));
-  }, [owner, dispatch]);
+  const applyDeletion = useCallback(
+    (event: MessageDeleted) => {
+      setDeletionState((previous) =>
+        previous.owner !== owner || previous.messages[event.messageId]
+          ? previous
+          : {
+              owner,
+              messages: {
+                ...previous.messages,
+                [event.messageId]: event.deletedAt,
+              },
+            },
+      );
+      dispatch(
+        chatApi.util.invalidateTags([
+          "Conversation",
+          { type: "ChatMessage", id: event.conversationId },
+        ]),
+      );
+    },
+    [owner, dispatch],
+  );
   const generation = useRef(0);
   const { currentData } = useGetUnreadChatCountQuery(undefined, {
     skip: !active,
@@ -88,7 +123,10 @@ export default function ChatProvider({ children }: { children: ReactNode }) {
       void withAccessToken(async (accessToken) => {
         if (listening) callback({ accessToken });
       }).catch(() => {
-        if (listening) setConnectionError("Unable to authenticate chat. Reconnect or sign in again.");
+        if (listening)
+          setConnectionError(
+            "Unable to authenticate chat. Reconnect or sign in again.",
+          );
       });
     });
     const refreshConversations = () => {
@@ -102,16 +140,23 @@ export default function ChatProvider({ children }: { children: ReactNode }) {
       dispatch(chatApi.util.invalidateTags(["Conversation", "ChatMessage"]));
     };
     const connectError = () => {
-      setConnectionError("Unable to connect to chat. Check your connection and try again.");
+      setConnectionError(
+        "Unable to connect to chat. Check your connection and try again.",
+      );
     };
     const disconnected = (reason: string) => {
       // A server disconnect after token expiry needs fresh credentials and a new handshake.
       if (reason !== "io server disconnect") return;
-      void refreshSession().then(() => {
-        if (listening) socket.connect();
-      }).catch(() => {
-        if (listening) setConnectionError("Unable to authenticate chat. Please sign in again.");
-      });
+      void refreshSession()
+        .then(() => {
+          if (listening) socket.connect();
+        })
+        .catch(() => {
+          if (listening)
+            setConnectionError(
+              "Unable to authenticate chat. Please sign in again.",
+            );
+        });
     };
     socket.on("connect", connected);
     socket.on("connect_error", connectError);
@@ -134,21 +179,40 @@ export default function ChatProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", refreshConversations);
       socket.disconnect();
     };
-  }, [active, user?.id, user?.role, socket, connection, dispatch, applyDeletion]);
+  }, [
+    active,
+    user?.id,
+    user?.role,
+    socket,
+    connection,
+    dispatch,
+    applyDeletion,
+  ]);
 
   async function reconnect() {
     const attempt = generation.current;
     setConnectionError("");
     try {
       await refreshSession();
-      if (active && generation.current === attempt) socket.disconnect().connect();
+      if (active && generation.current === attempt)
+        socket.disconnect().connect();
     } catch (error) {
-      if (generation.current === attempt) setConnectionError(errorMessage(error));
+      if (generation.current === attempt)
+        setConnectionError(errorMessage(error));
     }
   }
 
   return (
-    <ChatContext.Provider value={{ socket, connectionError, reconnect, unreadCount: active ? currentData?.unreadCount : undefined, deletions: deletionState.owner === owner ? deletionState.messages : {}, applyDeletion }}>
+    <ChatContext.Provider
+      value={{
+        socket,
+        connectionError,
+        reconnect,
+        unreadCount: active ? currentData?.unreadCount : undefined,
+        deletions: deletionState.owner === owner ? deletionState.messages : {},
+        applyDeletion,
+      }}
+    >
       {children}
     </ChatContext.Provider>
   );

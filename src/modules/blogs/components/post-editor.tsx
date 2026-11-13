@@ -36,7 +36,11 @@ type PostEditorProps = {
   onSaved?: (post: Blog) => void;
 };
 
-export default function PostEditor({ id, admin = false, onSaved }: PostEditorProps) {
+export default function PostEditor({
+  id,
+  admin = false,
+  onSaved,
+}: PostEditorProps) {
   const { user } = useAuth();
   const router = useRouter();
   const { control, reset, getValues } = useForm<Draft>({
@@ -210,8 +214,13 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
     } catch (failure) {
       setError(errorMessage(failure));
       toast.error(errorMessage(failure));
-      if (failure && typeof failure === "object" && "status" in failure && [404, 409].includes(Number(failure.status)))
-        setRevision(value => value + 1);
+      if (
+        failure &&
+        typeof failure === "object" &&
+        "status" in failure &&
+        [404, 409].includes(Number(failure.status))
+      )
+        setRevision((value) => value + 1);
     } finally {
       saveRunning.current = false;
       setBusy(false);
@@ -571,7 +580,9 @@ export default function PostEditor({ id, admin = false, onSaved }: PostEditorPro
       </div>
       {deleting && (
         <ConfirmDialog
-          title="Move this story to Trash?" confirmLabel="Move to Trash" busyLabel="Moving…"
+          title="Move this story to Trash?"
+          confirmLabel="Move to Trash"
+          busyLabel="Moving…"
           message="This moves the story to Trash and removes your browser recovery copy. Restore eligible stories from My Trash."
           busy={busy}
           onCancel={() => setDeleting(false)}

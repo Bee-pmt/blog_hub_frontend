@@ -22,7 +22,9 @@ export default function SearchFilters({
 }: SearchFiltersProps) {
   const router = useRouter();
   const filtersId = useId();
-  const [expanded, setExpanded] = useState(!!(filters.category || filters.tag || filters.author));
+  const [expanded, setExpanded] = useState(
+    !!(filters.category || filters.tag || filters.author),
+  );
   const [category, setCategory] = useState(filters.category || "");
   const [tag, setTag] = useState(filters.tag || "");
   const searchForm = useRef<HTMLFormElement>(null);
@@ -81,8 +83,16 @@ export default function SearchFilters({
         <button className="button button-primary" type="submit">
           Search
         </button>
-        <button className="button button-secondary filters-toggle" type="button" aria-expanded={expanded} aria-controls={filtersId}
-          onClick={() => setExpanded(value => !value)}><SlidersHorizontal size={18} aria-hidden="true" />Filters</button>
+        <button
+          className="button button-secondary filters-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={filtersId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <SlidersHorizontal size={18} aria-hidden="true" />
+          Filters
+        </button>
       </div>
       <div className="search-refinements" id={filtersId} hidden={!expanded}>
         <label>

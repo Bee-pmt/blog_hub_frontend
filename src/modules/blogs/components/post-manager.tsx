@@ -45,7 +45,8 @@ export default function PostManager({ admin = false }: PostManagerProps) {
     setBusy(post.id);
     setError("");
     try {
-      if (remove) await removeBlog({ id: post.id, version: post.version }).unwrap();
+      if (remove)
+        await removeBlog({ id: post.id, version: post.version }).unwrap();
       else {
         await changeStatus({
           id: post.id,
@@ -69,7 +70,8 @@ export default function PostManager({ admin = false }: PostManagerProps) {
       setDeleting(null);
     }
   }
-  if (!allowed) return <p role="alert">You do not have permission to moderate stories.</p>;
+  if (!allowed)
+    return <p role="alert">You do not have permission to moderate stories.</p>;
   return (
     <>
       <div className="section-heading">
@@ -157,7 +159,14 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                       )}
                     </div>
                     <div className="row-actions">
-                      {admin && <button className="text-link" onClick={() => setSelected(post.id)}>Inspect</button>}
+                      {admin && (
+                        <button
+                          className="text-link"
+                          onClick={() => setSelected(post.id)}
+                        >
+                          Inspect
+                        </button>
+                      )}
                       {!admin && (
                         <Link
                           className="text-link"
@@ -187,13 +196,16 @@ export default function PostManager({ admin = false }: PostManagerProps) {
                             ? "Publish"
                             : "Unpublish"}
                       </button>
-                      {(post.author.id === user?.id || hasPermission(user, "blogs.delete")) && <button
-                        className="text-link"
-                        disabled={!!busy}
-                        onClick={() => setDeleting(post)}
-                      >
-                        Move to Trash
-                      </button>}
+                      {(post.author.id === user?.id ||
+                        hasPermission(user, "blogs.delete")) && (
+                        <button
+                          className="text-link"
+                          disabled={!!busy}
+                          onClick={() => setDeleting(post)}
+                        >
+                          Move to Trash
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -219,10 +231,21 @@ export default function PostManager({ admin = false }: PostManagerProps) {
           </>
         )
       )}
-      {selected && <BlogPreview id={selected} admin={admin} onClose={() => { setSelected(null); void refetch(); }} />}
+      {selected && (
+        <BlogPreview
+          id={selected}
+          admin={admin}
+          onClose={() => {
+            setSelected(null);
+            void refetch();
+          }}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
-          title="Move this story to Trash?" confirmLabel="Move to Trash" busyLabel="Moving…"
+          title="Move this story to Trash?"
+          confirmLabel="Move to Trash"
+          busyLabel="Moving…"
           message={`“${deleting.title}” will move to Trash. You can manage it from My Trash.`}
           busy={!!busy}
           onCancel={() => setDeleting(null)}

@@ -24,7 +24,7 @@ import { queryError } from "@/lib/api/baseApi";
 import { useAuth } from "@/modules/auth/hooks/useAuth";
 import {
   assignablePermissions,
-  hasPermission,
+  hasPermission, 
 } from "@/modules/auth/permissions";
 import ConfirmDialog from "@/modules/base/components/confirm-dialog";
 

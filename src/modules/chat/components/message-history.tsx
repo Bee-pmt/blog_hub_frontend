@@ -7,7 +7,12 @@ import { useChatConnection } from "./chat-provider";
 import { queryError } from "@/lib/api/baseApi";
 import { chatApi, useGetMessagesQuery } from "../store/services/chatApi";
 import { useAppDispatch } from "@/lib/store/hooks";
-import type { ChatMessage, Conversation, MessageDeleted, MessagePage } from "../types";
+import type {
+  ChatMessage,
+  Conversation,
+  MessageDeleted,
+  MessagePage,
+} from "../types";
 import MessageComposer from "./message-composer";
 
 export default function MessageHistory({
@@ -108,7 +113,8 @@ export default function MessageHistory({
     ...liveMessages,
   ]) {
     const previous = unique.get(message.id);
-    const deletedAt = deletions[message.id] || previous?.deletedAt || message.deletedAt;
+    const deletedAt =
+      deletions[message.id] || previous?.deletedAt || message.deletedAt;
     unique.set(message.id, {
       ...message,
       isRead: previous?.isRead || message.isRead,
@@ -188,14 +194,21 @@ export default function MessageHistory({
     setDeleteError("");
     setDeleting(true);
     try {
-      if (!socket.connected) throw new Error("Chat is disconnected. Reconnect before deleting a message.");
-      const reply: { ok: true; data: MessageDeleted } | { ok: false; error: { message: string } } =
-        await socket.timeout(10000).emitWithAck("message:delete", { messageId: deleteTarget.id });
+      if (!socket.connected)
+        throw new Error(
+          "Chat is disconnected. Reconnect before deleting a message.",
+        );
+      const reply:
+        | { ok: true; data: MessageDeleted }
+        | { ok: false; error: { message: string } } = await socket
+        .timeout(10000)
+        .emitWithAck("message:delete", { messageId: deleteTarget.id });
       if (!alive.current) return;
       if (!reply.ok) throw new Error(reply.error.message);
       applyDeletion(reply.data);
     } catch (error) {
-      if (alive.current) setDeleteError(`Unable to delete this message. ${errorMessage(error)}`);
+      if (alive.current)
+        setDeleteError(`Unable to delete this message. ${errorMessage(error)}`);
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
@@ -296,8 +309,14 @@ export default function MessageHistory({
                   : conversation.otherUser.displayName}
                 :
               </span>
-              <p className={message.deletedAt ? "chat-message-deleted" : undefined}>
-                {message.deletedAt ? "This message was deleted." : message.content}
+              <p
+                className={
+                  message.deletedAt ? "chat-message-deleted" : undefined
+                }
+              >
+                {message.deletedAt
+                  ? "This message was deleted."
+                  : message.content}
               </p>
               <time
                 dateTime={message.createdAt}
@@ -316,12 +335,28 @@ export default function MessageHistory({
                 </span>
               )}
               {message.senderId === userId && !message.deletedAt && (
-                <button type="button" className="text-link chat-delete-message"
-                  aria-label="Delete message" title="Delete message" disabled={deleting}
-                  onClick={() => { setDeleteError(""); setDeleteTarget(message); }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
-                    strokeLinejoin="round" aria-hidden="true">
+                <button
+                  type="button"
+                  className="text-link chat-delete-message"
+                  aria-label="Delete message"
+                  title="Delete message"
+                  disabled={deleting}
+                  onClick={() => {
+                    setDeleteError("");
+                    setDeleteTarget(message);
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
                   </svg>
                 </button>
@@ -331,11 +366,20 @@ export default function MessageHistory({
         </ol>
       </div>
       {deleteTarget && (
-        <ConfirmDialog title="Delete this message?" confirmLabel="Delete for everyone"
+        <ConfirmDialog
+          title="Delete this message?"
+          confirmLabel="Delete for everyone"
           message="The message text will be removed for both participants. A deleted-message placeholder will remain."
-          busy={deleting} onCancel={() => setDeleteTarget(null)} onConfirm={() => void deleteMessage()} />
+          busy={deleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => void deleteMessage()}
+        />
       )}
-      {deleteError && <p className="notice" role="alert">{deleteError}</p>}
+      {deleteError && (
+        <p className="notice" role="alert">
+          {deleteError}
+        </p>
+      )}
       {receiptError && (
         <p className="notice" role="alert">
           {receiptError}{" "}
@@ -355,7 +399,10 @@ export default function MessageHistory({
             atBottom && data && !isFetching
               ? messages
                   .filter(
-                    (message) => message.senderId !== userId && !message.isRead && !message.deletedAt,
+                    (message) =>
+                      message.senderId !== userId &&
+                      !message.isRead &&
+                      !message.deletedAt,
                   )
                   .map((message) => message.id)
               : []
