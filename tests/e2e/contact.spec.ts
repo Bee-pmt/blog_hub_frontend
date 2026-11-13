@@ -157,17 +157,18 @@ test("contact prefills editable account details, fits both themes and loads CAPT
   await page.getByLabel("Password", { exact: true }).fill("password123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await page.getByRole("link", { name: "Contact Us", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Contact Us", exact: true }).click();
   await expect(page).toHaveURL(/\/contact$/);
   const form = page.getByRole("form", { name: "Contact us", exact: true });
   await expect(form.getByLabel("Name (required)", { exact: true })).toHaveValue("Alex Writer");
   await expect(form.getByLabel("Email (required)", { exact: true })).toHaveValue("author@test.local");
   await form.getByLabel("Name (required)", { exact: true }).fill("A different name");
-  for (const width of [375, 768, 1280, 1440]) {
+  for (const width of [360, 375, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const theme of ["light", "dark"]) {
       await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
       await expect(page.locator(`[data-captcha-theme="${theme}"]`)).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Contact Us", exact: true })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`contact-${width}-${theme}.png`), fullPage: true });
     }
@@ -175,7 +176,7 @@ test("contact prefills editable account details, fits both themes and loads CAPT
   await expect(form.getByLabel("Name (required)", { exact: true })).toHaveValue("A different name");
   await page.getByRole("link", { name: "BlogHub home", exact: true }).click();
   await page.locator(".site-footer").scrollIntoViewIfNeeded();
-  await page.getByRole("link", { name: "Contact Us", exact: true }).click();
+  await page.locator(".site-footer").getByRole("link", { name: "Contact Us", exact: true }).click();
   await expect(page.getByRole("button", { name: "Complete test CAPTCHA" })).toBeVisible();
   expect(loads()).toBe(1);
   await page.route(`${api}/contact`, route => route.fulfill({ status: 200, json: { message: "Accepted" } }));

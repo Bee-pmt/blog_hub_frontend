@@ -81,6 +81,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   </Link>
                 </div>
                 <nav className="site-nav" aria-label="Main navigation">
+                  <Link className="header-contact" href="/contact">Contact Us</Link>
                   <AccountNav />
                   <ThemeSelect />
                 </nav>

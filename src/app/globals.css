@@ -3457,6 +3457,12 @@ body:has(.feed-editor[open]) {
 }
 
 /* Public contact form uses the existing theme and input tokens. */
+.header-contact { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
+@media (max-width: 700px) {
+  .header-inner { gap: 0.5rem; }
+  .site-nav { flex-wrap: nowrap; gap: 0.5rem; }
+  .header-contact { font-size: 0.75rem; }
+}
 .footer-contact { font-size: 0.75rem; color: var(--muted); min-height: 44px; display: inline-flex; align-items: center; }
 .footer-contact:hover { text-decoration: underline; }
 .contact-page { max-width: 1080px; display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); align-items: start; gap: clamp(1.5rem, 3vw, 3rem); padding-block: 3rem 4rem; }
